@@ -1,0 +1,47 @@
+{
+  "name": "Elderly Home Care API",
+  "description": "API để quản lý đặt lịch chăm sóc người già",
+  "version": "1.0.0",
+  "baseUrl": "http://localhost:5000",
+  "folders": [
+    {
+      "name": "Health",
+      "requests": [
+        {
+          "name": "Health Check",
+          "method": "GET",
+          "url": "{{baseUrl}}/health"
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "requests": [
+        {
+          "name": "Register",
+          "method": "POST",
+          "url": "{{baseUrl}}/api/auth/register",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "mode": "raw",
+            "raw": "{\n  \"name\": \"John Doe\",\n  \"email\": \"john@example.com\",\n  \"password\": \"password123\",\n  \"role\": \"user\"\n}"
+          }
+        },
+        {
+          "name": "Login",
+          "method": "POST",
+          "url": "{{baseUrl}}/api/auth/login",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "mode": "raw",
+            "raw": "{\n  \"email\": \"john@example.com\",\n  \"password\": \"password123\"\n}"
+          }
+        }
+      ]
+    }
+  ]
+}

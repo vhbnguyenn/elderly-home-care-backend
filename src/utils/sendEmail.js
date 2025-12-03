@@ -1,0 +1,116 @@
+const nodemailer = require('nodemailer');
+
+/**
+ * Tạo transporter để gửi email
+ */
+const createTransporter = () => {
+  return nodemailer.createTransport({
+    host: process.env.EMAIL_HOST,
+    port: process.env.EMAIL_PORT || 587,
+    secure: false, // true for 465, false for other ports
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASSWORD
+    }
+  });
+};
+
+/**
+ * Gửi email verification code
+ */
+const sendVerificationCode = async (email, name, code) => {
+  try {
+    // Kiểm tra có config email chưa
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD || 
+        process.env.EMAIL_USER === 'your_email@gmail.com') {
+      // Chưa config email → In code ra console để test
+      console.log('⚠️  Email not configured. Verification code:');
+      console.log('📧 Email:', email);
+      console.log('🔑 Code:', code);
+      console.log('⏰ Expires in: 10 minutes');
+      return true;
+    }
+
+    const transporter = createTransporter();
+    
+    const mailOptions = {
+      from: `"Elderly Home Care" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: 'Your Verification Code',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #333;">Welcome to Elderly Home Care, ${name}!</h2>
+          <p>Thank you for registering. Please use the verification code below to verify your email address.</p>
+          
+          <div style="background-color: #f5f5f5; padding: 30px; border-radius: 5px; margin: 20px 0; text-align: center;">
+            <p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Your verification code is:</p>
+            <h1 style="margin: 0; font-size: 36px; color: #4CAF50; letter-spacing: 8px;">${code}</h1>
+          </div>
+          
+          <p style="margin-top: 20px; font-size: 14px; color: #666;">
+            This code will expire in <strong>10 minutes</strong>.
+          </p>
+          
+          <p style="margin-top: 30px; font-size: 12px; color: #999;">
+            If you didn't create an account, please ignore this email.
+          </p>
+        </div>
+      `
+    };
+    
+    const info = await transporter.sendMail(mailOptions);
+    console.log('✅ Verification code sent:', info.messageId);
+    return true;
+    
+  } catch (error) {
+    console.error('❌ Error sending verification code:', error.message);
+    throw new Error('Failed to send verification code');
+  }
+};
+
+/**
+ * Gửi email welcome sau khi verify
+ */
+const sendWelcomeEmail = async (email, name) => {
+  try {
+    const transporter = createTransporter();
+    
+    const mailOptions = {
+      from: `"Elderly Home Care" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: 'Welcome to Elderly Home Care!',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #333;">Welcome, ${name}!</h2>
+          <p>Your email has been successfully verified.</p>
+          <p>You can now enjoy all features of Elderly Home Care.</p>
+          
+          <div style="background-color: #f5f5f5; padding: 20px; border-radius: 5px; margin: 20px 0;">
+            <h3 style="margin-top: 0;">Get Started:</h3>
+            <ul style="line-height: 1.8;">
+              <li>Complete your profile</li>
+              <li>Browse available caregivers</li>
+              <li>Book your first appointment</li>
+            </ul>
+          </div>
+          
+          <p style="margin-top: 30px; font-size: 12px; color: #999;">
+            If you have any questions, feel free to contact our support team.
+          </p>
+        </div>
+      `
+    };
+    
+    await transporter.sendMail(mailOptions);
+    console.log('✅ Welcome email sent');
+    
+  } catch (error) {
+    console.error('❌ Error sending welcome email:', error);
+    // Không throw error vì đây là email phụ
+  }
+};
+
+module.exports = {
+  sendVerificationCode,
+  sendWelcomeEmail
+};
