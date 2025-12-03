@@ -110,7 +110,66 @@ const sendWelcomeEmail = async (email, name) => {
   }
 };
 
+/**
+ * Gửi email reset password code
+ */
+const sendResetPasswordCode = async (email, name, code) => {
+  try {
+    // Kiểm tra có config email chưa
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD || 
+        process.env.EMAIL_USER === 'your_email@gmail.com') {
+      // Chưa config email → In code ra console để test
+      console.log('⚠️  Email not configured. Reset password code:');
+      console.log('📧 Email:', email);
+      console.log('🔑 Code:', code);
+      console.log('⏰ Expires in: 10 minutes');
+      return true;
+    }
+
+    const transporter = createTransporter();
+    
+    const mailOptions = {
+      from: `"Elderly Home Care" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: 'Reset Your Password',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #333;">Reset Your Password</h2>
+          <p>Hi ${name},</p>
+          <p>We received a request to reset your password. Use the code below to reset your password:</p>
+          
+          <div style="background-color: #f5f5f5; padding: 30px; border-radius: 5px; margin: 20px 0; text-align: center;">
+            <p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Your reset password code is:</p>
+            <h1 style="margin: 0; font-size: 36px; color: #FF5722; letter-spacing: 8px;">${code}</h1>
+          </div>
+          
+          <p style="margin-top: 20px; font-size: 14px; color: #666;">
+            This code will expire in <strong>10 minutes</strong>.
+          </p>
+          
+          <p style="margin-top: 20px; font-size: 14px; color: #666;">
+            If you didn't request a password reset, please ignore this email or contact support if you have concerns.
+          </p>
+          
+          <p style="margin-top: 30px; font-size: 12px; color: #999;">
+            For security reasons, never share this code with anyone.
+          </p>
+        </div>
+      `
+    };
+    
+    const info = await transporter.sendMail(mailOptions);
+    console.log('✅ Reset password code sent:', info.messageId);
+    return true;
+    
+  } catch (error) {
+    console.error('❌ Error sending reset password code:', error.message);
+    throw new Error('Failed to send reset password code');
+  }
+};
+
 module.exports = {
   sendVerificationCode,
-  sendWelcomeEmail
+  sendWelcomeEmail,
+  sendResetPasswordCode
 };

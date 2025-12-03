@@ -54,6 +54,14 @@ const userSchema = new mongoose.Schema(
       type: Date,
       select: false
     },
+    resetPasswordCode: {
+      type: String,
+      select: false
+    },
+    resetPasswordCodeExpire: {
+      type: Date,
+      select: false
+    },
     refreshToken: {
       type: String,
       select: false // Không trả về khi query
@@ -115,6 +123,18 @@ userSchema.methods.generateVerificationCode = function() {
   // Lưu mã và thời gian hết hạn (10 phút)
   this.verificationCode = code;
   this.verificationCodeExpire = Date.now() + 10 * 60 * 1000; // 10 phút
+  
+  return code;
+};
+
+// Tạo Reset Password Code (6 số)
+userSchema.methods.generateResetPasswordCode = function() {
+  // Tạo mã 6 số ngẫu nhiên
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  
+  // Lưu mã và thời gian hết hạn (10 phút)
+  this.resetPasswordCode = code;
+  this.resetPasswordCodeExpire = Date.now() + 10 * 60 * 1000; // 10 phút
   
   return code;
 };

@@ -8,6 +8,9 @@ const errorHandler = require('./middlewares/errorHandler');
 
 const healthRoutes = require('./routes/healthRoutes');
 const authRoutes = require('./routes/authRoutes');
+const caregiverRoutes = require('./routes/caregiverRoutes');
+const bookingRoutes = require('./routes/bookingRoutes');
+const elderlyRoutes = require('./routes/elderlyRoutes');
 
 const app = express();
 
@@ -20,6 +23,9 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 app.use('/health', healthRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/caregiver', caregiverRoutes);
+app.use('/api/bookings', bookingRoutes);
+app.use('/api/elderly', elderlyRoutes);
 
 app.get('/', (req, res) => {
   res.json({
@@ -31,6 +37,28 @@ app.get('/', (req, res) => {
       auth: {
         register: 'POST /api/auth/register',
         login: 'POST /api/auth/login'
+      },
+      caregiver: {
+        createProfile: 'POST /api/caregiver/profile',
+        getMyProfile: 'GET /api/caregiver/profile',
+        updateProfile: 'PUT /api/caregiver/profile',
+        getAllProfiles: 'GET /api/caregiver/profiles (Admin)',
+        getProfileDetail: 'GET /api/caregiver/profile/:id/admin (Admin)',
+        updateStatus: 'PUT /api/caregiver/profile/:id/status (Admin)'
+      },
+      booking: {
+        getCaregiverBookings: 'GET /api/bookings/caregiver',
+        getCareseekerBookings: 'GET /api/bookings/careseeker',
+        getDetail: 'GET /api/bookings/:id',
+        getAllBookings: 'GET /api/bookings/all (Admin)',
+        updateStatus: 'PUT /api/bookings/:id/status'
+      },
+      elderly: {
+        create: 'POST /api/elderly',
+        getMyProfiles: 'GET /api/elderly',
+        getDetail: 'GET /api/elderly/:id',
+        update: 'PUT /api/elderly/:id',
+        delete: 'DELETE /api/elderly/:id'
       }
     }
   });

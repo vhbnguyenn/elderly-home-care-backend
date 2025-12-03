@@ -1,7 +1,7 @@
 const User = require('../models/User');
-const { registerSchema, loginSchema } = require('../utils/validation');
+const { registerSchema, loginSchema, resetPasswordSchema } = require('../utils/validation');
 const { verifyRefreshToken } = require('../utils/tokenHelper');
-const { sendVerificationCode, sendWelcomeEmail } = require('../utils/sendEmail');
+const { sendVerificationCode, sendWelcomeEmail, sendResetPasswordCode } = require('../utils/sendEmail');
 
 /**
  * @desc    Đăng ký tài khoản mới
@@ -398,6 +398,108 @@ const resendVerification = async (req, res, next) => {
   }
 };
 
+/**
+ * @desc    Forgot password - Gửi mã reset
+ * @route   POST /api/auth/forgot-password
+ * @access  Public
+ */
+const forgotPassword = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      });
+    }
+
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      // Không tiết lộ email có tồn tại hay không (bảo mật)
+      return res.status(200).json({
+        success: true,
+        message: 'If your email exists, you will receive a reset code shortly'
+      });
+    }
+
+    // Tạo reset password code
+    const resetCode = user.generateResetPasswordCode();
+    await user.save();
+
+    // Gửi email
+    try {
+      await sendResetPasswordCode(user.email, user.name, resetCode);
+    } catch (error) {
+      console.error('Failed to send reset code:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send reset code'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Reset password code sent to your email'
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Reset password với code
+ * @route   POST /api/auth/reset-password
+ * @access  Public
+ */
+const resetPassword = async (req, res, next) => {
+  try {
+    // Validate input
+    const { error, value } = resetPasswordSchema.validate(req.body);
+
+    if (error) {
+      const errors = error.details.map(detail => detail.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors
+      });
+    }
+
+    const { email, code, newPassword } = value;
+
+    // Tìm user với code hợp lệ
+    const user = await User.findOne({
+      email,
+      resetPasswordCode: code,
+      resetPasswordCodeExpire: { $gt: Date.now() }
+    }).select('+resetPasswordCode +resetPasswordCodeExpire +password');
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired reset code'
+      });
+    }
+
+    // Cập nhật password mới
+    user.password = newPassword;
+    user.resetPasswordCode = undefined;
+    user.resetPasswordCodeExpire = undefined;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Password reset successfully. You can now login with your new password.'
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -405,5 +507,7 @@ module.exports = {
   refreshToken,
   logout,
   verifyCode,
-  resendVerification
+  resendVerification,
+  forgotPassword,
+  resetPassword
 };
