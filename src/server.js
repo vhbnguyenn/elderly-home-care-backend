@@ -11,6 +11,7 @@ const authRoutes = require('./routes/authRoutes');
 const caregiverRoutes = require('./routes/caregiverRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
 const elderlyRoutes = require('./routes/elderlyRoutes');
+const aiRoutes = require('./routes/aiRoutes');
 
 const app = express();
 
@@ -26,6 +27,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/caregiver', caregiverRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/elderly', elderlyRoutes);
+app.use('/api/ai', aiRoutes);
 
 app.get('/', (req, res) => {
   res.json({
@@ -59,6 +61,12 @@ app.get('/', (req, res) => {
         getDetail: 'GET /api/elderly/:id',
         update: 'PUT /api/elderly/:id',
         delete: 'DELETE /api/elderly/:id'
+      },
+      ai: {
+        chatbot: 'POST /api/ai/chatbot',
+        recommendCaregiver: 'POST /api/ai/recommend-caregiver',
+        generateCareplan: 'POST /api/ai/generate-careplan',
+        analyzeHealth: 'POST /api/ai/analyze-health'
       }
     }
   });
