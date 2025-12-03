@@ -5,7 +5,8 @@ const {
   getMyElderlyProfiles,
   getElderlyProfileById,
   updateElderlyProfile,
-  deleteElderlyProfile
+  deleteElderlyProfile,
+  getCareseekerProfiles,
 } = require('../controllers/elderlyController');
 const { protect, authorize } = require('../middlewares/auth');
 const { ROLES } = require('../constants');
@@ -136,5 +137,19 @@ router.put('/:id', protect, authorize(ROLES.CARESEEKER), updateElderlyProfile);
  *         description: Deleted
  */
 router.delete('/:id', protect, authorize(ROLES.CARESEEKER), deleteElderlyProfile);
+
+/**
+ * @swagger
+ * /api/profiles/care-seeker:
+ *   get:
+ *     summary: Get care seeker's elderly profiles (for booking)
+ *     tags: [Elderly]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of elderly profiles
+ */
+router.get('/profiles/care-seeker', protect, authorize(ROLES.CARESEEKER), getCareseekerProfiles);
 
 module.exports = router;

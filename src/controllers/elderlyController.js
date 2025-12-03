@@ -165,10 +165,30 @@ const deleteElderlyProfile = async (req, res, next) => {
   }
 };
 
+// @desc    Get care seeker's elderly profiles (for booking)
+// @route   GET /api/profiles/care-seeker
+// @access  Private (Careseeker only)
+const getCareseekerProfiles = async (req, res, next) => {
+  try {
+    const profiles = await ElderlyProfile.find({ careseeker: req.user._id })
+      .select('fullName age healthConditions specialNeeds profileImage')
+      .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      count: profiles.length,
+      data: profiles,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createElderlyProfile,
   getMyElderlyProfiles,
   getElderlyProfileById,
   updateElderlyProfile,
-  deleteElderlyProfile
+  deleteElderlyProfile,
+  getCareseekerProfiles,
 };

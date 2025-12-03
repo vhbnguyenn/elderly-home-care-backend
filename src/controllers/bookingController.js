@@ -297,11 +297,149 @@ const updateTaskStatus = async (req, res, next) => {
   }
 };
 
+// @desc    Create new booking
+// @route   POST /api/bookings
+// @access  Private (Careseeker only)
+const createBooking = async (req, res, next) => {
+  try {
+    const {
+      caregiverId,
+      packageId,
+      elderlyProfileId,
+      startDate,
+      startTime,
+      address,
+      specialRequests,
+    } = req.body;
+
+    // Validate required fields
+    if (!caregiverId || !packageId || !elderlyProfileId || !startDate || !startTime || !address) {
+      return res.status(400).json({
+        success: false,
+        message: 'All required fields must be provided',
+      });
+    }
+
+    // Check caregiver exists and is approved
+    const caregiverProfile = await CaregiverProfile.findById(caregiverId);
+    if (!caregiverProfile || caregiverProfile.profileStatus !== 'approved') {
+      return res.status(404).json({
+        success: false,
+        message: 'Caregiver not found or not approved',
+      });
+    }
+
+    // Check caregiver is available
+    if (!caregiverProfile.isAvailable) {
+      return res.status(400).json({
+        success: false,
+        message: 'Caregiver is not available',
+      });
+    }
+
+    // Check package exists
+    const packageInfo = caregiverProfile.packages.id(packageId);
+    if (!packageInfo) {
+      return res.status(404).json({
+        success: false,
+        message: 'Package not found',
+      });
+    }
+
+    // Check elderly profile exists and belongs to careseeker
+    const ElderlyProfile = require('../models/ElderlyProfile');
+    const elderlyProfile = await ElderlyProfile.findById(elderlyProfileId);
+    if (!elderlyProfile || elderlyProfile.careseeker.toString() !== req.user._id.toString()) {
+      return res.status(404).json({
+        success: false,
+        message: 'Elderly profile not found or unauthorized',
+      });
+    }
+
+    // Validate advance booking time based on package type
+    const now = new Date();
+    const bookingDateTime = new Date(`${startDate}T${startTime}`);
+    const hoursUntilBooking = (bookingDateTime - now) / (1000 * 60 * 60);
+
+    const advanceBookingRequirements = {
+      basic: 12,
+      professional: 24,
+      premium: 48,
+    };
+
+    const requiredHours = advanceBookingRequirements[packageInfo.packageType];
+    if (hoursUntilBooking < requiredHours) {
+      return res.status(400).json({
+        success: false,
+        message: `${packageInfo.packageType} package requires at least ${requiredHours} hours advance booking`,
+      });
+    }
+
+    // Validate start time (7AM-5PM)
+    const [hours] = startTime.split(':').map(Number);
+    if (hours < 7 || hours >= 17) {
+      return res.status(400).json({
+        success: false,
+        message: 'Service hours are 7AM to 5PM only',
+      });
+    }
+
+    // Calculate response deadline (BR-21 dynamic deadline)
+    let responseDeadlineHours = 24;
+    if (packageInfo.packageType === 'premium') {
+      responseDeadlineHours = 48;
+    } else if (packageInfo.packageType === 'professional') {
+      responseDeadlineHours = 36;
+    }
+
+    const responseDeadline = new Date(now.getTime() + responseDeadlineHours * 60 * 60 * 1000);
+
+    // Calculate total price
+    const totalPrice = packageInfo.price;
+
+    // Create booking
+    const booking = await Booking.create({
+      careseeker: req.user._id,
+      caregiver: caregiverProfile.user,
+      caregiverProfile: caregiverId,
+      elderlyProfile: elderlyProfileId,
+      packageType: packageInfo.packageType,
+      packageId,
+      startDate: bookingDateTime,
+      startTime,
+      duration: packageInfo.duration,
+      address,
+      specialRequests: specialRequests || '',
+      totalPrice,
+      status: 'pending',
+      responseDeadline,
+    });
+
+    await booking.populate([
+      { path: 'careseeker', select: 'name email phone' },
+      { path: 'caregiver', select: 'name email phone' },
+      { path: 'caregiverProfile', select: 'profileImage bio yearsOfExperience' },
+      { path: 'elderlyProfile', select: 'fullName age healthConditions' },
+    ]);
+
+    // TODO: Send notification to caregiver
+
+    res.status(201).json({
+      success: true,
+      message: 'Booking created successfully',
+      data: booking,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getCaregiverBookings,
   getCareseekerBookings,
   getBookingDetail,
   getAllBookings,
   updateBookingStatus,
-  updateTaskStatus
+  updateTaskStatus,
+  createBooking,
 };

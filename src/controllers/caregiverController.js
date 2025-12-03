@@ -323,11 +323,149 @@ const updateProfileStatus = async (req, res, next) => {
   }
 };
 
+// @desc    Search caregivers with AI or filters
+// @route   POST /api/caregivers/search
+// @access  Public
+const searchCaregivers = async (req, res, next) => {
+  try {
+    const { query, filters = {} } = req.body;
+
+    let caregivers;
+
+    if (query) {
+      // AI Smart Search with natural language
+      const aiService = require('../services/aiService');
+      
+      // Get all approved and available caregivers
+      caregivers = await CaregiverProfile.find({
+        profileStatus: 'approved',
+        isAvailable: true,
+      })
+        .populate('user', 'name email')
+        .select('-__v -idCardNumber -idCardFrontImage -idCardBackImage');
+
+      if (caregivers.length === 0) {
+        return res.json({
+          success: true,
+          count: 0,
+          data: [],
+          searchType: 'ai',
+          message: 'No caregivers available',
+        });
+      }
+
+      // Use AI to rank caregivers based on query
+      const elderlyProfile = {
+        query,
+        ...filters,
+      };
+
+      const recommendations = await aiService.recommendCaregiver(
+        elderlyProfile,
+        caregivers.map((c) => c.toObject())
+      );
+
+      // Map AI recommendations back to full caregiver objects
+      const rankedCaregivers = recommendations.recommendations?.map((rec) => {
+        const caregiver = caregivers.find(
+          (c) => c._id.toString() === rec.caregiverId
+        );
+        return {
+          ...caregiver?.toObject(),
+          compatibilityScore: rec.matchScore,
+          reasoning: rec.reasoning,
+        };
+      }).filter(c => c) || [];
+
+      return res.json({
+        success: true,
+        count: rankedCaregivers.length,
+        data: rankedCaregivers.slice(0, 5), // Top 5
+        searchType: 'ai',
+      });
+    }
+
+    // Manual browse with filters
+    const filterQuery = { profileStatus: 'approved', isAvailable: true };
+
+    if (filters.skills?.length > 0) {
+      filterQuery.specializations = { $in: filters.skills };
+    }
+
+    if (filters.location) {
+      // Simple location filter (can be enhanced with geospatial queries)
+      filterQuery.$or = [
+        { permanentAddress: { $regex: filters.location, $options: 'i' } },
+        { temporaryAddress: { $regex: filters.location, $options: 'i' } },
+      ];
+    }
+
+    if (filters.minRating) {
+      filterQuery.rating = { $gte: filters.minRating };
+    }
+
+    if (filters.packageType) {
+      filterQuery['packages.packageType'] = filters.packageType;
+    }
+
+    caregivers = await CaregiverProfile.find(filterQuery)
+      .populate('user', 'name email')
+      .select('-__v -idCardNumber -idCardFrontImage -idCardBackImage')
+      .sort({ rating: -1, yearsOfExperience: -1 });
+
+    res.json({
+      success: true,
+      count: caregivers.length,
+      data: caregivers,
+      searchType: 'manual',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get caregiver detail for booking
+// @route   GET /api/caregivers/:caregiverId
+// @access  Public
+const getCaregiverDetail = async (req, res, next) => {
+  try {
+    const { caregiverId } = req.params;
+
+    const caregiver = await CaregiverProfile.findById(caregiverId)
+      .populate('user', 'name email')
+      .select('-__v -idCardNumber -idCardFrontImage -idCardBackImage');
+
+    if (!caregiver) {
+      return res.status(404).json({
+        success: false,
+        message: 'Caregiver not found',
+      });
+    }
+
+    // Only show approved profiles
+    if (caregiver.profileStatus !== 'approved') {
+      return res.status(403).json({
+        success: false,
+        message: 'Caregiver profile is not available',
+      });
+    }
+
+    res.json({
+      success: true,
+      data: caregiver,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createProfile,
   getMyProfile,
   updateProfile,
   getAllProfiles,
   getProfileForAdmin,
-  updateProfileStatus
+  updateProfileStatus,
+  searchCaregivers,
+  getCaregiverDetail,
 };

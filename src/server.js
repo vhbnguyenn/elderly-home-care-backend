@@ -12,6 +12,7 @@ const caregiverRoutes = require('./routes/caregiverRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
 const elderlyRoutes = require('./routes/elderlyRoutes');
 const aiRoutes = require('./routes/aiRoutes');
+const reviewRoutes = require('./routes/reviewRoutes');
 
 const app = express();
 
@@ -25,9 +26,12 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use('/health', healthRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/caregiver', caregiverRoutes);
+app.use('/api/caregivers', caregiverRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/elderly', elderlyRoutes);
+app.use('/api/profiles', elderlyRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/reviews', reviewRoutes);
 
 app.get('/', (req, res) => {
   res.json({
@@ -67,6 +71,13 @@ app.get('/', (req, res) => {
         recommendCaregiver: 'POST /api/ai/recommend-caregiver',
         generateCareplan: 'POST /api/ai/generate-careplan',
         analyzeHealth: 'POST /api/ai/analyze-health'
+      },
+      bookingFlow: {
+        searchCaregivers: 'POST /api/caregivers/search',
+        getCaregiverDetail: 'GET /api/caregivers/:caregiverId',
+        getCaregiverReviews: 'GET /api/reviews/caregiver/:caregiverId',
+        getElderlyProfiles: 'GET /api/profiles/care-seeker',
+        createBooking: 'POST /api/bookings'
       }
     }
   });

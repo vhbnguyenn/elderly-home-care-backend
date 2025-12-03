@@ -6,7 +6,9 @@ const {
   updateProfile,
   getAllProfiles,
   getProfileForAdmin,
-  updateProfileStatus
+  updateProfileStatus,
+  searchCaregivers,
+  getCaregiverDetail,
 } = require('../controllers/caregiverController');
 const { protect, authorize } = require('../middlewares/auth');
 const { uploadCaregiverProfile } = require('../middlewares/upload');
@@ -372,5 +374,57 @@ router.get('/profile/:id/admin', protect, authorize(ROLES.ADMIN), getProfileForA
  *         description: Unauthorized
  */
 router.put('/profile/:id/status', protect, authorize(ROLES.ADMIN), updateProfileStatus);
+
+/**
+ * @swagger
+ * /api/caregivers/search:
+ *   post:
+ *     summary: Search caregivers with AI or manual filters
+ *     tags: [Caregiver]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               query:
+ *                 type: string
+ *                 description: Natural language query for AI search
+ *               filters:
+ *                 type: object
+ *                 properties:
+ *                   skills:
+ *                     type: array
+ *                     items:
+ *                       type: string
+ *                   location:
+ *                     type: string
+ *                   minRating:
+ *                     type: number
+ *                   packageType:
+ *                     type: string
+ *     responses:
+ *       200:
+ *         description: Search results
+ */
+router.post('/search', searchCaregivers);
+
+/**
+ * @swagger
+ * /api/caregivers/{caregiverId}:
+ *   get:
+ *     summary: Get caregiver detail
+ *     tags: [Caregiver]
+ *     parameters:
+ *       - in: path
+ *         name: caregiverId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Caregiver detail
+ */
+router.get('/:caregiverId', getCaregiverDetail);
 
 module.exports = router;

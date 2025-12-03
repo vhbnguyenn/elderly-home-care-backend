@@ -6,7 +6,8 @@ const {
   getBookingDetail,
   getAllBookings,
   updateBookingStatus,
-  updateTaskStatus
+  updateTaskStatus,
+  createBooking,
 } = require('../controllers/bookingController');
 const { protect, authorize } = require('../middlewares/auth');
 const { ROLES } = require('../constants');
@@ -278,5 +279,59 @@ router.put('/:id/status', protect, updateBookingStatus);
  *         description: Booking or task not found
  */
 router.put('/:id/tasks/:taskId', protect, authorize(ROLES.CAREGIVER), updateTaskStatus);
+
+/**
+ * @swagger
+ * /api/bookings:
+ *   post:
+ *     summary: Create new booking request
+ *     tags: [Booking]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - caregiverId
+ *               - packageId
+ *               - elderlyProfileId
+ *               - startDate
+ *               - startTime
+ *               - address
+ *             properties:
+ *               caregiverId:
+ *                 type: string
+ *                 description: ID of caregiver profile
+ *               packageId:
+ *                 type: string
+ *                 description: ID of package in caregiver's packages array
+ *               elderlyProfileId:
+ *                 type: string
+ *                 description: ID of elderly profile
+ *               startDate:
+ *                 type: string
+ *                 format: date
+ *                 description: Start date (YYYY-MM-DD)
+ *               startTime:
+ *                 type: string
+ *                 description: Start time (HH:mm), between 07:00 and 17:00
+ *               address:
+ *                 type: string
+ *                 description: Service location address
+ *               specialRequests:
+ *                 type: string
+ *                 description: Special requests or notes
+ *     responses:
+ *       201:
+ *         description: Booking created successfully
+ *       400:
+ *         description: Validation error
+ *       404:
+ *         description: Caregiver or elderly profile not found
+ */
+router.post('/', protect, authorize(ROLES.CARESEEKER), createBooking);
 
 module.exports = router;
