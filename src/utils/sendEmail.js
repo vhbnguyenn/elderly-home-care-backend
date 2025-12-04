@@ -1,19 +1,13 @@
 const nodemailer = require('nodemailer');
-const sgMail = require('@sendgrid/mail');
-
-// Initialize SendGrid if API key exists
-if (process.env.SENDGRID_API_KEY) {
-  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-}
 
 /**
- * Tạo transporter để gửi email (Nodemailer)
+ * Tạo transporter để gửi email
  */
 const createTransporter = () => {
-  const port = parseInt(process.env.EMAIL_PORT) || 587;
+  const port = parseInt(process.env.EMAIL_PORT) || 465;
   
   return nodemailer.createTransport({
-    host: process.env.EMAIL_HOST,
+    host: process.env.EMAIL_HOST || 'smtp.gmail.com',
     port: port,
     secure: port === 465, // true for 465, false for 587
     auth: {
@@ -21,11 +15,16 @@ const createTransporter = () => {
       pass: process.env.EMAIL_PASSWORD
     },
     tls: {
-      rejectUnauthorized: false // Accept self-signed certificates
+      rejectUnauthorized: false,
+      minVersion: 'TLSv1.2'
     },
-    connectionTimeout: 10000, // 10 seconds
-    greetingTimeout: 10000,
-    socketTimeout: 10000
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 15000,
+    pool: true,
+    maxConnections: 5,
+    rateDelta: 1000,
+    rateLimit: 5
   });
 };
 
@@ -34,41 +33,7 @@ const createTransporter = () => {
  */
 const sendVerificationCode = async (email, name, code) => {
   try {
-    const htmlContent = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #333;">Welcome to Elderly Home Care, ${name}!</h2>
-        <p>Thank you for registering. Please use the verification code below to verify your email address.</p>
-        
-        <div style="background-color: #f5f5f5; padding: 30px; border-radius: 5px; margin: 20px 0; text-align: center;">
-          <p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Your verification code is:</p>
-          <h1 style="margin: 0; font-size: 36px; color: #4CAF50; letter-spacing: 8px;">${code}</h1>
-        </div>
-        
-        <p style="margin-top: 20px; font-size: 14px; color: #666;">
-          This code will expire in <strong>10 minutes</strong>.
-        </p>
-        
-        <p style="margin-top: 30px; font-size: 12px; color: #999;">
-          If you didn't create an account, please ignore this email.
-        </p>
-      </div>
-    `;
-
-    // Use SendGrid in production (if API key exists)
-    if (process.env.SENDGRID_API_KEY) {
-      const msg = {
-        to: email,
-        from: process.env.EMAIL_USER,
-        subject: 'Your Verification Code',
-        html: htmlContent
-      };
-      
-      await sgMail.send(msg);
-      console.log('✅ Verification code sent via SendGrid');
-      return true;
-    }
-    
-    // Fallback to Nodemailer (for local development)
+    // Kiểm tra có config email chưa
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD || 
         process.env.EMAIL_USER === 'your_email@gmail.com') {
       // Chưa config email → In code ra console để test
@@ -85,11 +50,29 @@ const sendVerificationCode = async (email, name, code) => {
       from: `"Elderly Home Care" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: 'Your Verification Code',
-      html: htmlContent
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #333;">Welcome to Elderly Home Care, ${name}!</h2>
+          <p>Thank you for registering. Please use the verification code below to verify your email address.</p>
+          
+          <div style="background-color: #f5f5f5; padding: 30px; border-radius: 5px; margin: 20px 0; text-align: center;">
+            <p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Your verification code is:</p>
+            <h1 style="margin: 0; font-size: 36px; color: #4CAF50; letter-spacing: 8px;">${code}</h1>
+          </div>
+          
+          <p style="margin-top: 20px; font-size: 14px; color: #666;">
+            This code will expire in <strong>10 minutes</strong>.
+          </p>
+          
+          <p style="margin-top: 30px; font-size: 12px; color: #999;">
+            If you didn't create an account, please ignore this email.
+          </p>
+        </div>
+      `
     };
     
     const info = await transporter.sendMail(mailOptions);
-    console.log('✅ Verification code sent via Nodemailer:', info.messageId);
+    console.log('✅ Verification code sent:', info.messageId);
     return true;
     
   } catch (error) {
