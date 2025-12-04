@@ -82,35 +82,28 @@ const sendVerificationCode = async (email, name, code) => {
  */
 const sendWelcomeEmail = async (email, name) => {
   try {
-    const transporter = createTransporter();
-    
-    const mailOptions = {
-      from: `"Elderly Home Care" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: 'Welcome to Elderly Home Care!',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #333;">Welcome, ${name}!</h2>
-          <p>Your email has been successfully verified.</p>
-          <p>You can now enjoy all features of Elderly Home Care.</p>
-          
-          <div style="background-color: #f5f5f5; padding: 20px; border-radius: 5px; margin: 20px 0;">
-            <h3 style="margin-top: 0;">Get Started:</h3>
-            <ul style="line-height: 1.8;">
-              <li>Complete your profile</li>
-              <li>Browse available caregivers</li>
-              <li>Book your first appointment</li>
-            </ul>
-          </div>
-          
-          <p style="margin-top: 30px; font-size: 12px; color: #999;">
-            If you have any questions, feel free to contact our support team.
-          </p>
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">Welcome, ${name}!</h2>
+        <p>Your email has been successfully verified.</p>
+        <p>You can now enjoy all features of Elderly Home Care.</p>
+        
+        <div style="background-color: #f5f5f5; padding: 20px; border-radius: 5px; margin: 20px 0;">
+          <h3 style="margin-top: 0;">Get Started:</h3>
+          <ul style="line-height: 1.8;">
+            <li>Complete your profile</li>
+            <li>Browse available caregivers</li>
+            <li>Book your first appointment</li>
+          </ul>
         </div>
-      `
-    };
+        
+        <p style="margin-top: 30px; font-size: 12px; color: #999;">
+          If you have any questions, feel free to contact our support team.
+        </p>
+      </div>
+    `;
     
-    await transporter.sendMail(mailOptions);
+    await sendEmailViaBrevoAPI(email, 'Welcome to Elderly Home Care!', htmlContent);
     console.log('✅ Welcome email sent');
     
   } catch (error) {
