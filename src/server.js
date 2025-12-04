@@ -13,6 +13,10 @@ const bookingRoutes = require('./routes/bookingRoutes');
 const elderlyRoutes = require('./routes/elderlyRoutes');
 const aiRoutes = require('./routes/aiRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
+const walletRoutes = require('./routes/walletRoutes');
+const packageRoutes = require('./routes/packageRoutes');
+const { startWalletCronJob } = require('./utils/walletCron');
 
 const app = express();
 
@@ -32,6 +36,9 @@ app.use('/api/elderly', elderlyRoutes);
 app.use('/api/profiles', elderlyRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/reviews', reviewRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/wallet', walletRoutes);
+app.use('/api/packages', packageRoutes);
 
 app.get('/', (req, res) => {
   res.json({
@@ -78,6 +85,12 @@ app.get('/', (req, res) => {
         getCaregiverReviews: 'GET /api/reviews/caregiver/:caregiverId',
         getElderlyProfiles: 'GET /api/profiles/care-seeker',
         createBooking: 'POST /api/bookings'
+      },
+      payment: {
+        generateQR: 'POST /api/payments/generate-qr/:bookingId',
+        confirmPayment: 'POST /api/payments/confirm/:bookingId',
+        getPaymentInfo: 'GET /api/payments/:bookingId',
+        vnpayCallback: 'GET /api/payments/vnpay/callback'
       }
     }
   });
@@ -90,6 +103,9 @@ const PORT = process.env.PORT || 5000;
 const startServer = async () => {
   try {
     await connectDB();
+    
+    // Start wallet cron job
+    startWalletCronJob();
     
     app.listen(PORT, () => {
       console.log(`🚀 Server is running on port ${PORT}`);

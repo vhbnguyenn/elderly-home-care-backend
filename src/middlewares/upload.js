@@ -44,7 +44,11 @@ const uploadCaregiverProfile = upload.fields([
   { name: 'certificateImages', maxCount: 10 } // Tối đa 10 chứng chỉ
 ]);
 
+// Middleware cho upload single image (check-in, v.v.)
+const uploadSingle = upload.single('verificationImage');
+
 module.exports = {
   upload,
-  uploadCaregiverProfile
+  uploadCaregiverProfile,
+  uploadSingle
 };

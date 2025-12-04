@@ -8,8 +8,11 @@ const {
   updateBookingStatus,
   updateTaskStatus,
   createBooking,
+  checkInBooking,
+  getCheckInInfo
 } = require('../controllers/bookingController');
 const { protect, authorize } = require('../middlewares/auth');
+const { uploadSingle } = require('../middlewares/upload');
 const { ROLES } = require('../constants');
 
 /**
@@ -333,5 +336,154 @@ router.put('/:id/tasks/:taskId', protect, authorize(ROLES.CAREGIVER), updateTask
  *         description: Caregiver or elderly profile not found
  */
 router.post('/', protect, authorize(ROLES.CARESEEKER), createBooking);
+
+/**
+ * @swagger
+ * /api/bookings/{id}/checkin:
+ *   post:
+ *     summary: Check-in bắt đầu ca làm việc (Caregiver)
+ *     tags: [Booking]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Booking ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - verificationImage
+ *             properties:
+ *               verificationImage:
+ *                 type: string
+ *                 format: binary
+ *                 description: Ảnh xác nhận tại địa điểm (nhà/số nhà)
+ *               actualStartTime:
+ *                 type: string
+ *                 description: Thời gian bắt đầu thực tế (HH:mm)
+ *                 example: "10:20"
+ *     responses:
+ *       200:
+ *         description: Check-in successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Đã bắt đầu! Ca làm việc đã được ghi nhận. Người nhà đã nhận thông báo."
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     bookingId:
+ *                       type: string
+ *                     checkInTime:
+ *                       type: string
+ *                       format: date-time
+ *                     actualStartTime:
+ *                       type: string
+ *                       example: "10:20"
+ *                     verificationImage:
+ *                       type: string
+ *                       description: Cloudinary URL của ảnh xác nhận
+ *                     earnings:
+ *                       type: number
+ *                       example: 400000
+ *                     status:
+ *                       type: string
+ *                       example: "in-progress"
+ *       400:
+ *         description: Invalid request or already checked in
+ *       403:
+ *         description: Not authorized
+ *       404:
+ *         description: Booking not found
+ */
+router.post('/:id/checkin', protect, authorize(ROLES.CAREGIVER), uploadSingle, checkInBooking);
+
+/**
+ * @swagger
+ * /api/bookings/{id}/checkin:
+ *   get:
+ *     summary: Xem thông tin check-in của booking (Careseeker/Caregiver)
+ *     tags: [Booking]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Booking ID
+ *     responses:
+ *       200:
+ *         description: Success
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     bookingId:
+ *                       type: string
+ *                     status:
+ *                       type: string
+ *                       example: "in-progress"
+ *                     bookingDate:
+ *                       type: string
+ *                       format: date
+ *                     bookingTime:
+ *                       type: string
+ *                       example: "10:00"
+ *                     workLocation:
+ *                       type: string
+ *                     totalPrice:
+ *                       type: number
+ *                     caregiver:
+ *                       type: object
+ *                       properties:
+ *                         name:
+ *                           type: string
+ *                         email:
+ *                           type: string
+ *                         phone:
+ *                           type: string
+ *                     checkIn:
+ *                       type: object
+ *                       properties:
+ *                         hasCheckedIn:
+ *                           type: boolean
+ *                           example: true
+ *                         verificationImage:
+ *                           type: string
+ *                           description: Cloudinary URL của ảnh xác nhận
+ *                         checkInTime:
+ *                           type: string
+ *                           format: date-time
+ *                         actualStartTime:
+ *                           type: string
+ *                           example: "10:20"
+ *       403:
+ *         description: Not authorized
+ *       404:
+ *         description: Booking not found
+ */
+router.get('/:id/checkin', protect, getCheckInInfo);
 
 module.exports = router;
