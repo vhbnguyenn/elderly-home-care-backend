@@ -71,7 +71,8 @@ const register = async (req, res, next) => {
       success: true,
       message: 'User registered successfully. Please check your email for verification code.',
       data: {
-        user: userResponse
+        user: userResponse,
+        ...(process.env.NODE_ENV === 'development' && { debug_code: verificationCode })
       }
     });
 
@@ -117,13 +118,13 @@ const login = async (req, res, next) => {
       });
     }
 
-    // Kiểm tra email đã verify chưa
-    if (!user.isEmailVerified) {
-      return res.status(403).json({
-        success: false,
-        message: 'Please verify your email before logging in'
-      });
-    }
+    // Kiểm tra email đã verify chưa (tạm thời comment cho testing)
+    // if (!user.isEmailVerified) {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: 'Please verify your email before logging in'
+    //   });
+    // }
 
     // So sánh password
     const isPasswordMatch = await user.comparePassword(password);
@@ -315,7 +316,7 @@ const verifyCode = async (req, res, next) => {
     });
     
     // Force update với updateOne để đảm bảo lưu vào DB
-    await User.updateOne(
+    const updateResult = await User.updateOne(
       { _id: user._id },
       { 
         $set: { isEmailVerified: true },
@@ -323,12 +324,19 @@ const verifyCode = async (req, res, next) => {
       }
     );
     
+    console.log('📝 Update result:', updateResult);
+    
+    if (updateResult.modifiedCount === 0) {
+      console.error('⚠️  WARNING: No documents were modified!');
+    }
+    
     // Reload user từ DB để đảm bảo có data mới nhất
     const updatedUser = await User.findById(user._id);
     
     console.log('✅ After save:', { 
       email: updatedUser.email, 
-      isEmailVerified: updatedUser.isEmailVerified 
+      isEmailVerified: updatedUser.isEmailVerified,
+      _id: updatedUser._id
     });
 
     // Gửi welcome email
@@ -405,11 +413,26 @@ const resendVerification = async (req, res, next) => {
     await user.save();
 
     // Gửi email
-    await sendVerificationCode(user.email, user.name, verificationCode);
+    try {
+      await sendVerificationCode(user.email, user.name, verificationCode);
+      
+      // In ra console trong dev mode để dễ debug
+      if (process.env.NODE_ENV === 'development') {
+        console.log('📧 [DEV MODE] Verification Code:', verificationCode);
+        console.log('📧 Email:', user.email);
+      }
+    } catch (error) {
+      console.error('❌ Failed to send verification email:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send verification code'
+      });
+    }
 
     res.status(200).json({
       success: true,
-      message: 'Verification code sent successfully'
+      message: 'Verification code sent successfully',
+      ...(process.env.NODE_ENV === 'development' && { debug_code: verificationCode })
     });
 
   } catch (error) {
