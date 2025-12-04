@@ -1,6 +1,47 @@
 const nodemailer = require('nodemailer');
 
 /**
+ * Send email using Brevo API (fallback if SMTP fails)
+ */
+const sendEmailViaBrevoAPI = async (to, subject, htmlContent) => {
+  try {
+    if (!process.env.EMAIL_PASSWORD || !process.env.EMAIL_PASSWORD.startsWith('xkeysib')) {
+      throw new Error('Brevo API key not configured');
+    }
+
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json',
+        'api-key': process.env.EMAIL_PASSWORD,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        sender: {
+          name: 'Elderly Home Care',
+          email: process.env.EMAIL_USER
+        },
+        to: [{ email: to }],
+        subject: subject,
+        htmlContent: htmlContent
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Brevo API error: ${error}`);
+    }
+
+    const result = await response.json();
+    console.log('✅ Email sent via Brevo API:', result.messageId);
+    return true;
+  } catch (error) {
+    console.error('❌ Brevo API error:', error.message);
+    throw error;
+  }
+};
+
+/**
  * Tạo transporter để gửi email
  */
 const createTransporter = () => {
@@ -44,35 +85,48 @@ const sendVerificationCode = async (email, name, code) => {
       return true;
     }
 
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">Welcome to Elderly Home Care, ${name}!</h2>
+        <p>Thank you for registering. Please use the verification code below to verify your email address.</p>
+        
+        <div style="background-color: #f5f5f5; padding: 30px; border-radius: 5px; margin: 20px 0; text-align: center;">
+          <p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Your verification code is:</p>
+          <h1 style="margin: 0; font-size: 36px; color: #4CAF50; letter-spacing: 8px;">${code}</h1>
+        </div>
+        
+        <p style="margin-top: 20px; font-size: 14px; color: #666;">
+          This code will expire in <strong>10 minutes</strong>.
+        </p>
+        
+        <p style="margin-top: 30px; font-size: 12px; color: #999;">
+          If you didn't create an account, please ignore this email.
+        </p>
+      </div>
+    `;
+
+    // Try Brevo API first (more reliable in production)
+    if (process.env.EMAIL_PASSWORD && process.env.EMAIL_PASSWORD.startsWith('xkeysib')) {
+      try {
+        await sendEmailViaBrevoAPI(email, 'Your Verification Code', htmlContent);
+        return true;
+      } catch (apiError) {
+        console.log('⚠️  Brevo API failed, falling back to SMTP...', apiError.message);
+      }
+    }
+
+    // Fallback to SMTP
     const transporter = createTransporter();
     
     const mailOptions = {
       from: `"Elderly Home Care" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: 'Your Verification Code',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #333;">Welcome to Elderly Home Care, ${name}!</h2>
-          <p>Thank you for registering. Please use the verification code below to verify your email address.</p>
-          
-          <div style="background-color: #f5f5f5; padding: 30px; border-radius: 5px; margin: 20px 0; text-align: center;">
-            <p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Your verification code is:</p>
-            <h1 style="margin: 0; font-size: 36px; color: #4CAF50; letter-spacing: 8px;">${code}</h1>
-          </div>
-          
-          <p style="margin-top: 20px; font-size: 14px; color: #666;">
-            This code will expire in <strong>10 minutes</strong>.
-          </p>
-          
-          <p style="margin-top: 30px; font-size: 12px; color: #999;">
-            If you didn't create an account, please ignore this email.
-          </p>
-        </div>
-      `
+      html: htmlContent
     };
     
     const info = await transporter.sendMail(mailOptions);
-    console.log('✅ Verification code sent:', info.messageId);
+    console.log('✅ Verification code sent via SMTP:', info.messageId);
     return true;
     
   } catch (error) {
