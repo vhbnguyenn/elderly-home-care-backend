@@ -22,6 +22,11 @@ const bookingSchema = new mongoose.Schema(
       ref: 'ElderlyProfile',
       required: [true, 'Elderly profile is required']
     },
+    package: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Package',
+      required: [true, 'Package is required']
+    },
     // Thông tin lịch hẹn
     bookingDate: {
       type: Date,
@@ -34,7 +39,7 @@ const bookingSchema = new mongoose.Schema(
     servicePackage: {
       type: String,
       enum: ['Gói cơ bản'],
-      required: [true, 'Service package is required']
+      required: false // Không bắt buộc nữa vì đã có package reference
     },
     duration: {
       type: Number, // Số giờ
@@ -87,6 +92,67 @@ const bookingSchema = new mongoose.Schema(
       type: Number,
       required: [true, 'Total price is required'],
       min: 0
+    },
+    // Thông tin check-in
+    checkIn: {
+      verificationImage: {
+        type: String, // Cloudinary URL của ảnh xác nhận địa điểm
+        trim: true
+      },
+      checkInTime: {
+        type: Date
+      },
+      actualStartTime: {
+        type: String // Giờ bắt đầu thực tế (HH:mm)
+      },
+      confirmedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      }
+    },
+    // Thông tin thanh toán
+    payment: {
+      status: {
+        type: String,
+        enum: ['pending', 'paid', 'failed', 'refunded'],
+        default: 'pending'
+      },
+      method: {
+        type: String,
+        enum: ['vnpay', 'momo', 'vietqr', 'bank_transfer', 'cash'],
+        default: null
+      },
+      transactionId: {
+        type: String,
+        trim: true
+      },
+      paidAt: {
+        type: Date
+      },
+      qrCode: {
+        type: String // URL của QR code
+      },
+      bankInfo: {
+        bankName: {
+          type: String,
+          default: 'Vietcombank'
+        },
+        accountNumber: {
+          type: String,
+          default: '1234567890'
+        },
+        accountName: {
+          type: String,
+          default: 'CONG TY ELDERLY CARE'
+        }
+      },
+      transferredToCaregiver: {
+        type: Boolean,
+        default: false
+      },
+      transferredAt: {
+        type: Date
+      }
     },
     status: {
       type: String,
