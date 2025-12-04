@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const axios = require('axios');
 
 /**
  * Send email using Brevo API (fallback if SMTP fails)
@@ -9,35 +10,28 @@ const sendEmailViaBrevoAPI = async (to, subject, htmlContent) => {
       throw new Error('Brevo API key not configured');
     }
 
-    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
-      method: 'POST',
+    const response = await axios.post('https://api.brevo.com/v3/smtp/email', {
+      sender: {
+        name: 'Elderly Home Care',
+        email: process.env.EMAIL_USER
+      },
+      to: [{ email: to }],
+      subject: subject,
+      htmlContent: htmlContent
+    }, {
       headers: {
         'accept': 'application/json',
         'api-key': process.env.EMAIL_PASSWORD,
         'content-type': 'application/json'
-      },
-      body: JSON.stringify({
-        sender: {
-          name: 'Elderly Home Care',
-          email: process.env.EMAIL_USER
-        },
-        to: [{ email: to }],
-        subject: subject,
-        htmlContent: htmlContent
-      })
+      }
     });
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Brevo API error: ${error}`);
-    }
-
-    const result = await response.json();
-    console.log('✅ Email sent via Brevo API:', result.messageId);
+    console.log('✅ Email sent via Brevo API:', response.data.messageId);
     return true;
   } catch (error) {
-    console.error('❌ Brevo API error:', error.message);
-    throw error;
+    const errorMsg = error.response?.data?.message || error.message;
+    console.error('❌ Brevo API error:', errorMsg);
+    throw new Error(`Brevo API failed: ${errorMsg}`);
   }
 };
 
