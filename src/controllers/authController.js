@@ -117,13 +117,13 @@ const login = async (req, res, next) => {
       });
     }
 
-    // Kiểm tra email đã verify chưa (tạm thời comment cho testing)
-    // if (!user.isEmailVerified) {
-    //   return res.status(403).json({
-    //     success: false,
-    //     message: 'Please verify your email before logging in'
-    //   });
-    // }
+    // Kiểm tra email đã verify chưa
+    if (!user.isEmailVerified) {
+      return res.status(403).json({
+        success: false,
+        message: 'Please verify your email before logging in'
+      });
+    }
 
     // So sánh password
     const isPasswordMatch = await user.comparePassword(password);
@@ -309,10 +309,27 @@ const verifyCode = async (req, res, next) => {
     }
 
     // Cập nhật user: verify email và xóa code
-    user.isEmailVerified = true;
-    user.verificationCode = undefined;
-    user.verificationCodeExpire = undefined;
-    await user.save();
+    console.log('🔍 Before update:', { 
+      email: user.email, 
+      isEmailVerified: user.isEmailVerified 
+    });
+    
+    // Force update với updateOne để đảm bảo lưu vào DB
+    await User.updateOne(
+      { _id: user._id },
+      { 
+        $set: { isEmailVerified: true },
+        $unset: { verificationCode: 1, verificationCodeExpire: 1 }
+      }
+    );
+    
+    // Reload user từ DB để đảm bảo có data mới nhất
+    const updatedUser = await User.findById(user._id);
+    
+    console.log('✅ After save:', { 
+      email: updatedUser.email, 
+      isEmailVerified: updatedUser.isEmailVerified 
+    });
 
     // Gửi welcome email
     try {
@@ -321,23 +338,25 @@ const verifyCode = async (req, res, next) => {
       console.error('Failed to send welcome email:', error);
     }
 
-    // Tạo tokens cho user
-    const accessToken = user.generateToken();
-    const refreshToken = user.generateRefreshToken();
+    // Tạo tokens cho user (dùng updatedUser)
+    const accessToken = updatedUser.generateToken();
+    const refreshToken = updatedUser.generateRefreshToken();
     
-    user.refreshToken = refreshToken;
-    await user.save();
+    await User.updateOne(
+      { _id: updatedUser._id },
+      { $set: { refreshToken: refreshToken } }
+    );
 
     res.status(200).json({
       success: true,
       message: 'Email verified successfully',
       data: {
         user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          isEmailVerified: user.isEmailVerified
+          id: updatedUser._id,
+          name: updatedUser.name,
+          email: updatedUser.email,
+          role: updatedUser.role,
+          isEmailVerified: updatedUser.isEmailVerified
         },
         accessToken,
         refreshToken
