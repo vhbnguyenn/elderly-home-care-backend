@@ -117,13 +117,13 @@ const login = async (req, res, next) => {
       });
     }
 
-    // Kiểm tra email đã verify chưa
-    if (!user.isEmailVerified) {
-      return res.status(403).json({
-        success: false,
-        message: 'Please verify your email before logging in'
-      });
-    }
+    // Kiểm tra email đã verify chưa (tạm thời comment cho testing)
+    // if (!user.isEmailVerified) {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: 'Please verify your email before logging in'
+    //   });
+    // }
 
     // So sánh password
     const isPasswordMatch = await user.comparePassword(password);

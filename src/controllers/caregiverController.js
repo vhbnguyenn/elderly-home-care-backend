@@ -323,67 +323,12 @@ const updateProfileStatus = async (req, res, next) => {
   }
 };
 
-// @desc    Search caregivers with AI or filters
+// @desc    Search caregivers with filters
 // @route   POST /api/caregivers/search
 // @access  Public
 const searchCaregivers = async (req, res, next) => {
   try {
-    const { query, filters = {} } = req.body;
-
-    let caregivers;
-
-    if (query) {
-      // AI Smart Search with natural language
-      const aiService = require('../services/aiService');
-      
-      // Get all approved and available caregivers
-      caregivers = await CaregiverProfile.find({
-        profileStatus: 'approved',
-        isAvailable: true,
-      })
-        .populate('user', 'name email')
-        .select('-__v -idCardNumber -idCardFrontImage -idCardBackImage');
-
-      if (caregivers.length === 0) {
-        return res.json({
-          success: true,
-          count: 0,
-          data: [],
-          searchType: 'ai',
-          message: 'No caregivers available',
-        });
-      }
-
-      // Use AI to rank caregivers based on query
-      const elderlyProfile = {
-        query,
-        ...filters,
-      };
-
-      const recommendations = await aiService.recommendCaregiver(
-        elderlyProfile,
-        caregivers.map((c) => c.toObject())
-      );
-
-      // Map AI recommendations back to full caregiver objects
-      const rankedCaregivers = recommendations.recommendations?.map((rec) => {
-        const caregiver = caregivers.find(
-          (c) => c._id.toString() === rec.caregiverId
-        );
-        return {
-          ...caregiver?.toObject(),
-          compatibilityScore: rec.matchScore,
-          reasoning: rec.reasoning,
-        };
-      }).filter(c => c) || [];
-
-      return res.json({
-        success: true,
-        count: rankedCaregivers.length,
-        data: rankedCaregivers.slice(0, 5), // Top 5
-        searchType: 'ai',
-      });
-    }
+    const { filters = {} } = req.body;
 
     // Manual browse with filters
     const filterQuery = { profileStatus: 'approved', isAvailable: true };
