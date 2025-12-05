@@ -659,12 +659,284 @@ const changePassword = async (req, res, next) => {
   }
 };
 
+/**
+ * @desc    Toggle user account status (Admin only)
+ * @route   PUT /api/auth/users/:userId/toggle-status
+ * @access  Private (Admin only)
+ */
+const toggleUserStatus = async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Cannot block admin accounts
+    if (user.role === 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Cannot block admin accounts'
+      });
+    }
+
+    // Toggle isActive status
+    user.isActive = !user.isActive;
+    await user.save();
+
+    const statusMessage = user.isActive ? 'activated' : 'blocked';
+
+    res.status(200).json({
+      success: true,
+      message: `User account ${statusMessage} successfully`,
+      data: {
+        userId: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        isActive: user.isActive
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Get all users (Admin only)
+ * @route   GET /api/auth/users
+ * @access  Private (Admin only)
+ */
+const getAllUsers = async (req, res, next) => {
+  try {
+    const { role, isActive, page = 1, limit = 10, search } = req.query;
+
+    const query = {};
+
+    // Filter by role
+    if (role) {
+      query.role = role;
+    }
+
+    // Filter by active status
+    if (isActive !== undefined) {
+      query.isActive = isActive === 'true';
+    }
+
+    // Search by name or email
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const skip = (page - 1) * limit;
+
+    const users = await User.find(query)
+      .select('-password -refreshToken -verificationCode -resetPasswordCode')
+      .skip(skip)
+      .limit(parseInt(limit))
+      .sort({ createdAt: -1 });
+
+    const total = await User.countDocuments(query);
+
+    res.status(200).json({
+      success: true,
+      data: users,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(total / limit)
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Create user account (Admin only)
+ * @route   POST /api/profiles/users
+ * @access  Private (Admin only)
+ */
+const createUserByAdmin = async (req, res, next) => {
+  try {
+    const { name, email, password, role, phone } = req.body;
+
+    // Validation
+    if (!email || !password || !role) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email, password and role are required'
+      });
+    }
+
+    // Validate role
+    const validRoles = ['admin', 'caregiver', 'careseeker'];
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid role. Must be one of: admin, caregiver, careseeker'
+      });
+    }
+
+    // Validate password length
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters'
+      });
+    }
+
+    // Check if email already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email already registered'
+      });
+    }
+
+    // Create user
+    const user = await User.create({
+      name: name || email.split('@')[0],
+      email,
+      password,
+      role,
+      phone,
+      isEmailVerified: true, // Admin-created accounts are auto-verified
+      isActive: true
+    });
+
+    // Send welcome email (optional)
+    try {
+      await sendWelcomeEmail(user.email, user.name);
+    } catch (error) {
+      console.error('Failed to send welcome email:', error);
+    }
+
+    const userResponse = {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      phone: user.phone,
+      isActive: user.isActive,
+      isEmailVerified: user.isEmailVerified,
+      createdAt: user.createdAt
+    };
+
+    res.status(201).json({
+      success: true,
+      message: 'User account created successfully',
+      data: userResponse
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Deactivate own account (Caregiver & Careseeker only)
+ * @route   PUT /api/profiles/deactivate
+ * @access  Private (Caregiver, Careseeker)
+ */
+const deactivateOwnAccount = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Admin cannot deactivate their own account via this endpoint
+    if (user.role === 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin accounts cannot be deactivated via this endpoint'
+      });
+    }
+
+    // Check if already deactivated
+    if (!user.isActive) {
+      return res.status(400).json({
+        success: false,
+        message: 'Account is already deactivated'
+      });
+    }
+
+    // Deactivate account
+    user.isActive = false;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Your account has been deactivated successfully. Contact admin to reactivate.',
+      data: {
+        userId: user._id,
+        email: user.email,
+        isActive: user.isActive
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Get user by ID (Admin only)
+ * @route   GET /api/profiles/users/:userId
+ * @access  Private (Admin only)
+ */
+const getUserById = async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findById(userId)
+      .select('-password -refreshToken -verificationCode -resetPasswordCode');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: user
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   register,
   login,
   getMe,
   updateProfile,
   changePassword,
+  toggleUserStatus,
+  getAllUsers,
+  getUserById,
+  createUserByAdmin,
+  deactivateOwnAccount,
   refreshToken,
   logout,
   verifyCode,
