@@ -11,7 +11,6 @@ const profileRoutes = require('./routes/profileRoutes');
 const caregiverRoutes = require('./routes/caregiverRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
 const elderlyRoutes = require('./routes/elderlyRoutes');
-const aiRoutes = require('./routes/aiRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const walletRoutes = require('./routes/walletRoutes');
@@ -20,7 +19,14 @@ const { startWalletCronJob } = require('./utils/walletCron');
 
 const app = express();
 
-app.use(cors());
+// CORS Configuration
+app.use(cors({
+  origin: '*', // Allow all origins (for mobile app)
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -33,7 +39,6 @@ app.use('/api/caregiver', caregiverRoutes);
 app.use('/api/caregivers', caregiverRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/elderly', elderlyRoutes);
-app.use('/api/ai', aiRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/wallet', walletRoutes);
@@ -70,12 +75,6 @@ app.get('/', (req, res) => {
         getDetail: 'GET /api/elderly/:id',
         update: 'PUT /api/elderly/:id',
         delete: 'DELETE /api/elderly/:id'
-      },
-      ai: {
-        chatbot: 'POST /api/ai/chatbot',
-        recommendCaregiver: 'POST /api/ai/recommend-caregiver',
-        generateCareplan: 'POST /api/ai/generate-careplan',
-        analyzeHealth: 'POST /api/ai/analyze-health'
       },
       bookingFlow: {
         searchCaregivers: 'POST /api/caregivers/search',
