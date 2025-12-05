@@ -459,6 +459,68 @@ const getCaregiverDetail = async (req, res, next) => {
   }
 };
 
+// @desc    Lấy danh sách caregivers (Public - cho careseeker browse)
+// @route   GET /api/caregivers
+// @access  Public
+const getCaregiversList = async (req, res, next) => {
+  try {
+    const { 
+      page = 1, 
+      limit = 20,
+      education,
+      minExperience,
+      location,
+      sortBy = 'createdAt',
+      order = 'desc'
+    } = req.query;
+
+    // Query chỉ lấy caregiver đã approved
+    const query = { profileStatus: 'approved' };
+
+    // Filter theo education
+    if (education) {
+      query.education = education;
+    }
+
+    // Filter theo kinh nghiệm tối thiểu
+    if (minExperience) {
+      query.yearsOfExperience = { $gte: Number(minExperience) };
+    }
+
+    // Filter theo location
+    if (location) {
+      query.$or = [
+        { permanentAddress: { $regex: location, $options: 'i' } },
+        { temporaryAddress: { $regex: location, $options: 'i' } }
+      ];
+    }
+
+    // Sort options
+    const sortOptions = {};
+    sortOptions[sortBy] = order === 'asc' ? 1 : -1;
+
+    const caregivers = await CaregiverProfile.find(query)
+      .populate('user', 'name email phone')
+      .select('-idCardNumber -idCardFrontImage -idCardBackImage -universityDegreeImage')
+      .sort(sortOptions)
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const count = await CaregiverProfile.countDocuments(query);
+
+    res.status(200).json({
+      success: true,
+      data: caregivers,
+      totalPages: Math.ceil(count / limit),
+      currentPage: Number(page),
+      total: count
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createProfile,
   getMyProfile,
@@ -468,4 +530,5 @@ module.exports = {
   updateProfileStatus,
   searchCaregivers,
   getCaregiverDetail,
+  getCaregiversList,
 };

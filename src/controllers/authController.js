@@ -173,6 +173,11 @@ const login = async (req, res, next) => {
  * @route   GET /api/auth/me
  * @access  Private
  */
+/**
+ * @desc    Get current user profile
+ * @route   GET /api/auth/me
+ * @access  Private
+ */
 const getMe = async (req, res, next) => {
   try {
     const user = await User.findById(req.user.id);
@@ -181,6 +186,54 @@ const getMe = async (req, res, next) => {
       success: true,
       data: user
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Update user profile (for careseeker and admin)
+ * @route   PUT /api/auth/profile
+ * @access  Private (Careseeker, Admin)
+ */
+const updateProfile = async (req, res, next) => {
+  try {
+    const { name, phone, email } = req.body;
+
+    const user = await User.findById(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Update fields if provided
+    if (name) user.name = name;
+    if (phone) user.phone = phone;
+    
+    // Check if email is being changed and if it's already taken
+    if (email && email !== user.email) {
+      const existingUser = await User.findOne({ email });
+      if (existingUser) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email already in use'
+        });
+      }
+      user.email = email;
+      user.isEmailVerified = false; // Need to verify new email
+    }
+
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully',
+      data: user
+    });
+
   } catch (error) {
     next(error);
   }
@@ -500,10 +553,76 @@ const resetPassword = async (req, res, next) => {
   }
 };
 
+/**
+ * @desc    Change password (for logged in users)
+ * @route   PUT /api/auth/change-password
+ * @access  Private
+ */
+const changePassword = async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword, confirmPassword } = req.body;
+
+    // Validation
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide current password, new password and confirm password'
+      });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password and confirm password do not match'
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be at least 6 characters'
+      });
+    }
+
+    // Get user with password field
+    const user = await User.findById(req.user.id).select('+password');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check current password
+    const isMatch = await user.comparePassword(currentPassword);
+    if (!isMatch) {
+      return res.status(400).json({
+        success: false,
+        message: 'Current password is incorrect'
+      });
+    }
+
+    // Update password
+    user.password = newPassword;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Password changed successfully'
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   register,
   login,
   getMe,
+  updateProfile,
+  changePassword,
   refreshToken,
   logout,
   verifyCode,

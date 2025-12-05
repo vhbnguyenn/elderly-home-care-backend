@@ -187,10 +187,10 @@ const updatePackage = async (req, res, next) => {
   }
 };
 
-// @desc    Xóa gói dịch vụ (soft delete)
-// @route   DELETE /api/packages/:id
+// @desc    Toggle package active/block status
+// @route   PUT /api/packages/:id/toggle
 // @access  Private (Admin only)
-const deletePackage = async (req, res, next) => {
+const togglePackageStatus = async (req, res, next) => {
   try {
     const packageData = await Package.findById(req.params.id);
 
@@ -201,40 +201,15 @@ const deletePackage = async (req, res, next) => {
       });
     }
 
-    // Soft delete - set isActive to false
-    packageData.isActive = false;
+    // Toggle active status
+    packageData.isActive = !packageData.isActive;
     await packageData.save();
+
+    const statusMessage = packageData.isActive ? 'activated' : 'blocked';
 
     res.status(200).json({
       success: true,
-      message: 'Package deleted successfully'
-    });
-
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Kích hoạt lại gói dịch vụ
-// @route   PUT /api/packages/:id/activate
-// @access  Private (Admin only)
-const activatePackage = async (req, res, next) => {
-  try {
-    const packageData = await Package.findById(req.params.id);
-
-    if (!packageData) {
-      return res.status(404).json({
-        success: false,
-        message: 'Package not found'
-      });
-    }
-
-    packageData.isActive = true;
-    await packageData.save();
-
-    res.status(200).json({
-      success: true,
-      message: 'Package activated successfully',
+      message: `Package ${statusMessage} successfully`,
       data: packageData
     });
 
@@ -248,6 +223,5 @@ module.exports = {
   getAllPackages,
   getPackageById,
   updatePackage,
-  deletePackage,
-  activatePackage
+  togglePackageStatus
 };

@@ -6,8 +6,8 @@ const connectDB = require('./config/db');
 const swaggerSpec = require('./config/swagger');
 const errorHandler = require('./middlewares/errorHandler');
 
-const healthRoutes = require('./routes/healthRoutes');
 const authRoutes = require('./routes/authRoutes');
+const profileRoutes = require('./routes/profileRoutes');
 const caregiverRoutes = require('./routes/caregiverRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
 const elderlyRoutes = require('./routes/elderlyRoutes');
@@ -27,13 +27,12 @@ app.use(express.urlencoded({ extended: true }));
 // Swagger Documentation
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-app.use('/health', healthRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/profiles', profileRoutes);
 app.use('/api/caregiver', caregiverRoutes);
 app.use('/api/caregivers', caregiverRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/elderly', elderlyRoutes);
-app.use('/api/profiles', elderlyRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/payments', paymentRoutes);
@@ -45,7 +44,6 @@ app.get('/', (req, res) => {
     message: 'Welcome to Elderly Home Care API',
     version: '1.0.0',
     endpoints: {
-      health: '/health',
       documentation: '/api-docs',
       auth: {
         register: 'POST /api/auth/register',
@@ -110,7 +108,6 @@ const startServer = async () => {
     app.listen(PORT, () => {
       console.log(`🚀 Server is running on port ${PORT}`);
       console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log(`📍 Health check: http://localhost:${PORT}/health`);
       console.log(`📚 API Documentation: http://localhost:${PORT}/api-docs`);
     });
   } catch (error) {

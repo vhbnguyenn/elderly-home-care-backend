@@ -364,7 +364,32 @@ const createBooking = async (req, res, next) => {
 
     // Validate advance booking time based on package type
     const now = new Date();
-    const bookingDateTime = new Date(`${startDate}T${startTime}`);
+    
+    // Validate and parse startTime
+    if (!startTime || !/^\d{2}:\d{2}$/.test(startTime)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid startTime format. Use HH:mm (e.g., 08:00)',
+      });
+    }
+
+    // Validate and parse startDate
+    if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid startDate format. Use YYYY-MM-DD (e.g., 2025-12-10)',
+      });
+    }
+
+    const bookingDateTime = new Date(`${startDate}T${startTime}:00.000Z`);
+    
+    if (isNaN(bookingDateTime.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid date or time value',
+      });
+    }
+
     const hoursUntilBooking = (bookingDateTime - now) / (1000 * 60 * 60);
 
     const advanceBookingRequirements = {
