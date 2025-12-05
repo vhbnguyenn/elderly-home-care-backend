@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { register, login, getMe, updateProfile, changePassword, refreshToken, logout, verifyCode, resendVerification, forgotPassword, resetPassword } = require('../controllers/authController');
+const { register, login, getMe, updateProfile, changePassword, toggleUserStatus, getAllUsers, refreshToken, logout, verifyCode, resendVerification, forgotPassword, resetPassword } = require('../controllers/authController');
 const { protect, authorize } = require('../middlewares/auth');
 const { ROLES } = require('../constants');
 
@@ -388,103 +388,5 @@ router.post('/forgot-password', forgotPassword);
  *         description: Server error
  */
 router.post('/reset-password', resetPassword);
-
-/**
- * @swagger
- * /api/auth/change-password:
- *   put:
- *     summary: Change password (for logged in users)
- *     tags: [Authentication]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - currentPassword
- *               - newPassword
- *               - confirmPassword
- *             properties:
- *               currentPassword:
- *                 type: string
- *                 format: password
- *                 example: OldPassword123
- *               newPassword:
- *                 type: string
- *                 format: password
- *                 example: NewPassword123
- *               confirmPassword:
- *                 type: string
- *                 format: password
- *                 example: NewPassword123
- *     responses:
- *       200:
- *         description: Password changed successfully
- *       400:
- *         description: Current password is incorrect or validation failed
- *       401:
- *         description: Not authorized
- */
-router.put('/change-password', protect, changePassword);
-
-/**
- * @swagger
- * /api/auth/profile:
- *   get:
- *     summary: Get current user profile
- *     tags: [Authentication]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Profile retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 data:
- *                   $ref: '#/components/schemas/UserResponse'
- *       401:
- *         description: Not authorized
- *   put:
- *     summary: Update user profile (Careseeker & Admin only)
- *     tags: [Authentication]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               name:
- *                 type: string
- *                 example: John Doe Updated
- *               phone:
- *                 type: string
- *                 example: "0909999999"
- *               email:
- *                 type: string
- *                 format: email
- *                 example: newemail@example.com
- *     responses:
- *       200:
- *         description: Profile updated successfully
- *       400:
- *         description: Email already in use
- *       401:
- *         description: Not authorized
- */
-router.route('/profile')
-  .get(protect, getMe)
-  .put(protect, authorize(ROLES.CARESEEKER, ROLES.ADMIN), updateProfile);
 
 module.exports = router;
