@@ -323,67 +323,12 @@ const updateProfileStatus = async (req, res, next) => {
   }
 };
 
-// @desc    Search caregivers with AI or filters
+// @desc    Search caregivers with filters
 // @route   POST /api/caregivers/search
 // @access  Public
 const searchCaregivers = async (req, res, next) => {
   try {
-    const { query, filters = {} } = req.body;
-
-    let caregivers;
-
-    if (query) {
-      // AI Smart Search with natural language
-      const aiService = require('../services/aiService');
-      
-      // Get all approved and available caregivers
-      caregivers = await CaregiverProfile.find({
-        profileStatus: 'approved',
-        isAvailable: true,
-      })
-        .populate('user', 'name email')
-        .select('-__v -idCardNumber -idCardFrontImage -idCardBackImage');
-
-      if (caregivers.length === 0) {
-        return res.json({
-          success: true,
-          count: 0,
-          data: [],
-          searchType: 'ai',
-          message: 'No caregivers available',
-        });
-      }
-
-      // Use AI to rank caregivers based on query
-      const elderlyProfile = {
-        query,
-        ...filters,
-      };
-
-      const recommendations = await aiService.recommendCaregiver(
-        elderlyProfile,
-        caregivers.map((c) => c.toObject())
-      );
-
-      // Map AI recommendations back to full caregiver objects
-      const rankedCaregivers = recommendations.recommendations?.map((rec) => {
-        const caregiver = caregivers.find(
-          (c) => c._id.toString() === rec.caregiverId
-        );
-        return {
-          ...caregiver?.toObject(),
-          compatibilityScore: rec.matchScore,
-          reasoning: rec.reasoning,
-        };
-      }).filter(c => c) || [];
-
-      return res.json({
-        success: true,
-        count: rankedCaregivers.length,
-        data: rankedCaregivers.slice(0, 5), // Top 5
-        searchType: 'ai',
-      });
-    }
+    const { filters = {} } = req.body;
 
     // Manual browse with filters
     const filterQuery = { profileStatus: 'approved', isAvailable: true };
@@ -459,6 +404,68 @@ const getCaregiverDetail = async (req, res, next) => {
   }
 };
 
+// @desc    Lấy danh sách caregivers (Public - cho careseeker browse)
+// @route   GET /api/caregivers
+// @access  Public
+const getCaregiversList = async (req, res, next) => {
+  try {
+    const { 
+      page = 1, 
+      limit = 20,
+      education,
+      minExperience,
+      location,
+      sortBy = 'createdAt',
+      order = 'desc'
+    } = req.query;
+
+    // Query chỉ lấy caregiver đã approved
+    const query = { profileStatus: 'approved' };
+
+    // Filter theo education
+    if (education) {
+      query.education = education;
+    }
+
+    // Filter theo kinh nghiệm tối thiểu
+    if (minExperience) {
+      query.yearsOfExperience = { $gte: Number(minExperience) };
+    }
+
+    // Filter theo location
+    if (location) {
+      query.$or = [
+        { permanentAddress: { $regex: location, $options: 'i' } },
+        { temporaryAddress: { $regex: location, $options: 'i' } }
+      ];
+    }
+
+    // Sort options
+    const sortOptions = {};
+    sortOptions[sortBy] = order === 'asc' ? 1 : -1;
+
+    const caregivers = await CaregiverProfile.find(query)
+      .populate('user', 'name email phone')
+      .select('-idCardNumber -idCardFrontImage -idCardBackImage -universityDegreeImage')
+      .sort(sortOptions)
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const count = await CaregiverProfile.countDocuments(query);
+
+    res.status(200).json({
+      success: true,
+      data: caregivers,
+      totalPages: Math.ceil(count / limit),
+      currentPage: Number(page),
+      total: count
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createProfile,
   getMyProfile,
@@ -468,4 +475,5 @@ module.exports = {
   updateProfileStatus,
   searchCaregivers,
   getCaregiverDetail,
+  getCaregiversList,
 };

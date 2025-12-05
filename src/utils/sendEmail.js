@@ -1,18 +1,39 @@
-const nodemailer = require('nodemailer');
+const axios = require('axios');
 
 /**
- * Tạo transporter để gửi email
+ * Send email using Brevo API
  */
-const createTransporter = () => {
-  return nodemailer.createTransport({
-    host: process.env.EMAIL_HOST,
-    port: process.env.EMAIL_PORT || 587,
-    secure: false, // true for 465, false for other ports
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASSWORD
+const sendEmailViaBrevoAPI = async (to, subject, htmlContent) => {
+  try {
+    const apiKey = process.env.BREVO_API_KEY || process.env.EMAIL_PASSWORD;
+    
+    if (!apiKey) {
+      throw new Error('Brevo API key not configured');
     }
-  });
+
+    const response = await axios.post('https://api.brevo.com/v3/smtp/email', {
+      sender: {
+        name: 'Elderly Home Care',
+        email: process.env.EMAIL_USER
+      },
+      to: [{ email: to }],
+      subject: subject,
+      htmlContent: htmlContent
+    }, {
+      headers: {
+        'accept': 'application/json',
+        'api-key': apiKey,
+        'content-type': 'application/json'
+      }
+    });
+
+    console.log('✅ Email sent via Brevo API:', response.data.messageId);
+    return true;
+  } catch (error) {
+    const errorMsg = error.response?.data?.message || error.message;
+    console.error('❌ Brevo API error:', errorMsg);
+    throw new Error(`Brevo API failed: ${errorMsg}`);
+  }
 };
 
 /**
@@ -20,46 +41,34 @@ const createTransporter = () => {
  */
 const sendVerificationCode = async (email, name, code) => {
   try {
-    // Kiểm tra có config email chưa
-    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD || 
-        process.env.EMAIL_USER === 'your_email@gmail.com') {
-      // Chưa config email → In code ra console để test
-      console.log('⚠️  Email not configured. Verification code:');
-      console.log('📧 Email:', email);
-      console.log('🔑 Code:', code);
-      console.log('⏰ Expires in: 10 minutes');
-      return true;
-    }
-
-    const transporter = createTransporter();
-    
-    const mailOptions = {
-      from: `"Elderly Home Care" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: 'Your Verification Code',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #333;">Welcome to Elderly Home Care, ${name}!</h2>
-          <p>Thank you for registering. Please use the verification code below to verify your email address.</p>
-          
-          <div style="background-color: #f5f5f5; padding: 30px; border-radius: 5px; margin: 20px 0; text-align: center;">
-            <p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Your verification code is:</p>
-            <h1 style="margin: 0; font-size: 36px; color: #4CAF50; letter-spacing: 8px;">${code}</h1>
-          </div>
-          
-          <p style="margin-top: 20px; font-size: 14px; color: #666;">
-            This code will expire in <strong>10 minutes</strong>.
-          </p>
-          
-          <p style="margin-top: 30px; font-size: 12px; color: #999;">
-            If you didn't create an account, please ignore this email.
-          </p>
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">Welcome to Elderly Home Care, ${name}!</h2>
+        <p>Thank you for registering. Please use the verification code below to verify your email address.</p>
+        
+        <div style="background-color: #f5f5f5; padding: 30px; border-radius: 5px; margin: 20px 0; text-align: center;">
+          <p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Your verification code is:</p>
+          <h1 style="margin: 0; font-size: 36px; color: #4CAF50; letter-spacing: 8px;">${code}</h1>
         </div>
-      `
-    };
+        
+        <p style="margin-top: 20px; font-size: 14px; color: #666;">
+          This code will expire in <strong>10 minutes</strong>.
+        </p>
+        
+        <p style="margin-top: 30px; font-size: 12px; color: #999;">
+          If you didn't create an account, please ignore this email.
+        </p>
+      </div>
+    `;
+
+    await sendEmailViaBrevoAPI(email, 'Your Verification Code', htmlContent);
     
-    const info = await transporter.sendMail(mailOptions);
-    console.log('✅ Verification code sent:', info.messageId);
+    // In ra console trong dev mode để dễ debug
+    if (process.env.NODE_ENV === 'development') {
+      console.log('📧 [DEV MODE] Verification Code:', code);
+      console.log('📧 Email:', email);
+    }
+    
     return true;
     
   } catch (error) {
@@ -73,35 +82,28 @@ const sendVerificationCode = async (email, name, code) => {
  */
 const sendWelcomeEmail = async (email, name) => {
   try {
-    const transporter = createTransporter();
-    
-    const mailOptions = {
-      from: `"Elderly Home Care" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: 'Welcome to Elderly Home Care!',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #333;">Welcome, ${name}!</h2>
-          <p>Your email has been successfully verified.</p>
-          <p>You can now enjoy all features of Elderly Home Care.</p>
-          
-          <div style="background-color: #f5f5f5; padding: 20px; border-radius: 5px; margin: 20px 0;">
-            <h3 style="margin-top: 0;">Get Started:</h3>
-            <ul style="line-height: 1.8;">
-              <li>Complete your profile</li>
-              <li>Browse available caregivers</li>
-              <li>Book your first appointment</li>
-            </ul>
-          </div>
-          
-          <p style="margin-top: 30px; font-size: 12px; color: #999;">
-            If you have any questions, feel free to contact our support team.
-          </p>
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">Welcome, ${name}!</h2>
+        <p>Your email has been successfully verified.</p>
+        <p>You can now enjoy all features of Elderly Home Care.</p>
+        
+        <div style="background-color: #f5f5f5; padding: 20px; border-radius: 5px; margin: 20px 0;">
+          <h3 style="margin-top: 0;">Get Started:</h3>
+          <ul style="line-height: 1.8;">
+            <li>Complete your profile</li>
+            <li>Browse available caregivers</li>
+            <li>Book your first appointment</li>
+          </ul>
         </div>
-      `
-    };
+        
+        <p style="margin-top: 30px; font-size: 12px; color: #999;">
+          If you have any questions, feel free to contact our support team.
+        </p>
+      </div>
+    `;
     
-    await transporter.sendMail(mailOptions);
+    await sendEmailViaBrevoAPI(email, 'Welcome to Elderly Home Care!', htmlContent);
     console.log('✅ Welcome email sent');
     
   } catch (error) {
@@ -115,51 +117,33 @@ const sendWelcomeEmail = async (email, name) => {
  */
 const sendResetPasswordCode = async (email, name, code) => {
   try {
-    // Kiểm tra có config email chưa
-    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD || 
-        process.env.EMAIL_USER === 'your_email@gmail.com') {
-      // Chưa config email → In code ra console để test
-      console.log('⚠️  Email not configured. Reset password code:');
-      console.log('📧 Email:', email);
-      console.log('🔑 Code:', code);
-      console.log('⏰ Expires in: 10 minutes');
-      return true;
-    }
-
-    const transporter = createTransporter();
-    
-    const mailOptions = {
-      from: `"Elderly Home Care" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: 'Reset Your Password',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #333;">Reset Your Password</h2>
-          <p>Hi ${name},</p>
-          <p>We received a request to reset your password. Use the code below to reset your password:</p>
-          
-          <div style="background-color: #f5f5f5; padding: 30px; border-radius: 5px; margin: 20px 0; text-align: center;">
-            <p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Your reset password code is:</p>
-            <h1 style="margin: 0; font-size: 36px; color: #FF5722; letter-spacing: 8px;">${code}</h1>
-          </div>
-          
-          <p style="margin-top: 20px; font-size: 14px; color: #666;">
-            This code will expire in <strong>10 minutes</strong>.
-          </p>
-          
-          <p style="margin-top: 20px; font-size: 14px; color: #666;">
-            If you didn't request a password reset, please ignore this email or contact support if you have concerns.
-          </p>
-          
-          <p style="margin-top: 30px; font-size: 12px; color: #999;">
-            For security reasons, never share this code with anyone.
-          </p>
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">Reset Your Password</h2>
+        <p>Hi ${name},</p>
+        <p>We received a request to reset your password. Use the code below to reset your password:</p>
+        
+        <div style="background-color: #f5f5f5; padding: 30px; border-radius: 5px; margin: 20px 0; text-align: center;">
+          <p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Your reset password code is:</p>
+          <h1 style="margin: 0; font-size: 36px; color: #FF5722; letter-spacing: 8px;">${code}</h1>
         </div>
-      `
-    };
+        
+        <p style="margin-top: 20px; font-size: 14px; color: #666;">
+          This code will expire in <strong>10 minutes</strong>.
+        </p>
+        
+        <p style="margin-top: 20px; font-size: 14px; color: #666;">
+          If you didn't request a password reset, please ignore this email or contact support if you have concerns.
+        </p>
+        
+        <p style="margin-top: 30px; font-size: 12px; color: #999;">
+          For security reasons, never share this code with anyone.
+        </p>
+      </div>
+    `;
     
-    const info = await transporter.sendMail(mailOptions);
-    console.log('✅ Reset password code sent:', info.messageId);
+    await sendEmailViaBrevoAPI(email, 'Reset Your Password', htmlContent);
+    console.log('✅ Reset password code sent to:', email);
     return true;
     
   } catch (error) {

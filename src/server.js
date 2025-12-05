@@ -6,39 +6,49 @@ const connectDB = require('./config/db');
 const swaggerSpec = require('./config/swagger');
 const errorHandler = require('./middlewares/errorHandler');
 
-const healthRoutes = require('./routes/healthRoutes');
 const authRoutes = require('./routes/authRoutes');
+const profileRoutes = require('./routes/profileRoutes');
 const caregiverRoutes = require('./routes/caregiverRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
 const elderlyRoutes = require('./routes/elderlyRoutes');
-const aiRoutes = require('./routes/aiRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
+const walletRoutes = require('./routes/walletRoutes');
+const packageRoutes = require('./routes/packageRoutes');
+const { startWalletCronJob } = require('./utils/walletCron');
 
 const app = express();
 
-app.use(cors());
+// CORS Configuration
+app.use(cors({
+  origin: '*', // Allow all origins (for mobile app)
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Swagger Documentation
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-app.use('/health', healthRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/profiles', profileRoutes);
 app.use('/api/caregiver', caregiverRoutes);
 app.use('/api/caregivers', caregiverRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/elderly', elderlyRoutes);
-app.use('/api/profiles', elderlyRoutes);
-app.use('/api/ai', aiRoutes);
 app.use('/api/reviews', reviewRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/wallet', walletRoutes);
+app.use('/api/packages', packageRoutes);
 
 app.get('/', (req, res) => {
   res.json({
     message: 'Welcome to Elderly Home Care API',
     version: '1.0.0',
     endpoints: {
-      health: '/health',
       documentation: '/api-docs',
       auth: {
         register: 'POST /api/auth/register',
@@ -66,18 +76,18 @@ app.get('/', (req, res) => {
         update: 'PUT /api/elderly/:id',
         delete: 'DELETE /api/elderly/:id'
       },
-      ai: {
-        chatbot: 'POST /api/ai/chatbot',
-        recommendCaregiver: 'POST /api/ai/recommend-caregiver',
-        generateCareplan: 'POST /api/ai/generate-careplan',
-        analyzeHealth: 'POST /api/ai/analyze-health'
-      },
       bookingFlow: {
         searchCaregivers: 'POST /api/caregivers/search',
         getCaregiverDetail: 'GET /api/caregivers/:caregiverId',
         getCaregiverReviews: 'GET /api/reviews/caregiver/:caregiverId',
         getElderlyProfiles: 'GET /api/profiles/care-seeker',
         createBooking: 'POST /api/bookings'
+      },
+      payment: {
+        generateQR: 'POST /api/payments/generate-qr/:bookingId',
+        confirmPayment: 'POST /api/payments/confirm/:bookingId',
+        getPaymentInfo: 'GET /api/payments/:bookingId',
+        vnpayCallback: 'GET /api/payments/vnpay/callback'
       }
     }
   });
@@ -91,10 +101,12 @@ const startServer = async () => {
   try {
     await connectDB();
     
+    // Start wallet cron job
+    startWalletCronJob();
+    
     app.listen(PORT, () => {
       console.log(`🚀 Server is running on port ${PORT}`);
       console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log(`📍 Health check: http://localhost:${PORT}/health`);
       console.log(`📚 API Documentation: http://localhost:${PORT}/api-docs`);
     });
   } catch (error) {

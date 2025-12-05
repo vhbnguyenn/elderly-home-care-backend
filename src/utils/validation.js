@@ -17,11 +17,11 @@ const registerSchema = Joi.object({
   email: Joi.string()
     .trim()
     .lowercase()
-    .email()
+    .pattern(/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/)
     .required()
     .messages({
       'string.empty': 'Email is required',
-      'string.email': 'Please provide a valid email'
+      'string.pattern.base': 'Please provide a valid email'
     }),
   
   password: Joi.string()

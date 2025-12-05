@@ -1,5 +1,6 @@
 const Booking = require('../models/Booking');
 const CaregiverProfile = require('../models/CaregiverProfile');
+const Package = require('../models/Package');
 const { ROLES } = require('../constants');
 
 // @desc    Lấy danh sách lịch hẹn của caregiver
@@ -47,14 +48,15 @@ const getCaregiverBookings = async (req, res, next) => {
 
 // @desc    Lấy chi tiết lịch hẹn
 // @route   GET /api/bookings/:id
-// @access  Private (Caregiver hoặc Careseeker)
+// @access  Private (Admin, Caregiver, Careseeker)
 const getBookingDetail = async (req, res, next) => {
   try {
     const booking = await Booking.findById(req.params.id)
       .populate('careseeker', 'name email phone')
       .populate('caregiver', 'name email phone')
       .populate('caregiverProfile', 'profileImage bio yearsOfExperience education certificates')
-      .populate('elderlyProfile'); // Populate đầy đủ thông tin người già
+      .populate('elderlyProfile') // Populate đầy đủ thông tin người già
+      .populate('package'); // Populate package info
 
     if (!booking) {
       return res.status(404).json({
@@ -63,12 +65,24 @@ const getBookingDetail = async (req, res, next) => {
       });
     }
 
-    // Kiểm tra quyền truy cập
-    if (
-      booking.careseeker.toString() !== req.user._id.toString() &&
-      booking.caregiver.toString() !== req.user._id.toString() &&
-      req.user.role !== ROLES.ADMIN
-    ) {
+    // Admin: xem tất cả
+    if (req.user.role === ROLES.ADMIN) {
+      return res.status(200).json({
+        success: true,
+        data: booking
+      });
+    }
+
+    // Kiểm tra quyền truy cập cho Caregiver và Careseeker
+    // Lấy ID từ populated object hoặc ObjectId
+    const caregiverId = booking.caregiver._id ? booking.caregiver._id.toString() : booking.caregiver.toString();
+    const careseekerId = booking.careseeker._id ? booking.careseeker._id.toString() : booking.careseeker.toString();
+    const userId = req.user._id.toString();
+
+    const isCaregiver = caregiverId === userId;
+    const isCareseeker = careseekerId === userId;
+
+    if (!isCaregiver && !isCareseeker) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to access this booking'
@@ -320,29 +334,21 @@ const createBooking = async (req, res, next) => {
       });
     }
 
+    // Check package exists and is active
+    const packageInfo = await Package.findById(packageId);
+    if (!packageInfo || !packageInfo.isActive) {
+      return res.status(404).json({
+        success: false,
+        message: 'Package not found or inactive',
+      });
+    }
+
     // Check caregiver exists and is approved
     const caregiverProfile = await CaregiverProfile.findById(caregiverId);
     if (!caregiverProfile || caregiverProfile.profileStatus !== 'approved') {
       return res.status(404).json({
         success: false,
         message: 'Caregiver not found or not approved',
-      });
-    }
-
-    // Check caregiver is available
-    if (!caregiverProfile.isAvailable) {
-      return res.status(400).json({
-        success: false,
-        message: 'Caregiver is not available',
-      });
-    }
-
-    // Check package exists
-    const packageInfo = caregiverProfile.packages.id(packageId);
-    if (!packageInfo) {
-      return res.status(404).json({
-        success: false,
-        message: 'Package not found',
       });
     }
 
@@ -358,7 +364,32 @@ const createBooking = async (req, res, next) => {
 
     // Validate advance booking time based on package type
     const now = new Date();
-    const bookingDateTime = new Date(`${startDate}T${startTime}`);
+    
+    // Validate and parse startTime
+    if (!startTime || !/^\d{2}:\d{2}$/.test(startTime)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid startTime format. Use HH:mm (e.g., 08:00)',
+      });
+    }
+
+    // Validate and parse startDate
+    if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid startDate format. Use YYYY-MM-DD (e.g., 2025-12-10)',
+      });
+    }
+
+    const bookingDateTime = new Date(`${startDate}T${startTime}:00.000Z`);
+    
+    if (isNaN(bookingDateTime.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid date or time value',
+      });
+    }
+
     const hoursUntilBooking = (bookingDateTime - now) / (1000 * 60 * 60);
 
     const advanceBookingRequirements = {
@@ -397,19 +428,44 @@ const createBooking = async (req, res, next) => {
     // Calculate total price
     const totalPrice = packageInfo.price;
 
+    // Tạo services từ package
+    const services = [];
+    if (packageInfo.services && packageInfo.services.length > 0) {
+      packageInfo.services.forEach(serviceName => {
+        services.push({
+          name: serviceName,
+          description: '',
+          selected: true
+        });
+      });
+    }
+
+    // Tạo tasks từ services của package
+    const tasks = [];
+    if (packageInfo.services && packageInfo.services.length > 0) {
+      packageInfo.services.forEach(serviceName => {
+        tasks.push({
+          taskName: serviceName,
+          description: '',
+          isCompleted: false
+        });
+      });
+    }
+
     // Create booking
     const booking = await Booking.create({
       careseeker: req.user._id,
       caregiver: caregiverProfile.user,
       caregiverProfile: caregiverId,
       elderlyProfile: elderlyProfileId,
-      packageType: packageInfo.packageType,
-      packageId,
-      startDate: bookingDateTime,
-      startTime,
+      package: packageId,
+      bookingDate: bookingDateTime,
+      bookingTime: startTime,
       duration: packageInfo.duration,
-      address,
+      workLocation: address,
       specialRequests: specialRequests || '',
+      services,
+      tasks,
       totalPrice,
       status: 'pending',
       responseDeadline,
@@ -418,8 +474,9 @@ const createBooking = async (req, res, next) => {
     await booking.populate([
       { path: 'careseeker', select: 'name email phone' },
       { path: 'caregiver', select: 'name email phone' },
-      { path: 'caregiverProfile', select: 'profileImage bio yearsOfExperience' },
-      { path: 'elderlyProfile', select: 'fullName age healthConditions' },
+      { path: 'caregiverProfile', select: 'profileImage bio yearsOfExperience education certificates' },
+      { path: 'elderlyProfile' }, // Populate đầy đủ thông tin người già
+      { path: 'package' }, // Populate package info
     ]);
 
     // TODO: Send notification to caregiver
@@ -434,6 +491,139 @@ const createBooking = async (req, res, next) => {
   }
 };
 
+// @desc    Check-in bắt đầu ca làm việc (upload ảnh xác nhận)
+// @route   POST /api/bookings/:id/checkin
+// @access  Private (Caregiver only)
+const checkInBooking = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { actualStartTime } = req.body;
+
+    const booking = await Booking.findById(id)
+      .populate('careseeker', 'name email phone')
+      .populate('elderlyProfile');
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found'
+      });
+    }
+
+    // Kiểm tra quyền - chỉ caregiver của booking này
+    if (booking.caregiver.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to check-in this booking'
+      });
+    }
+
+    // Kiểm tra booking đã confirmed
+    if (booking.status !== 'confirmed') {
+      return res.status(400).json({
+        success: false,
+        message: 'Booking must be confirmed before check-in'
+      });
+    }
+
+    // Kiểm tra đã check-in chưa
+    if (booking.checkIn.checkInTime) {
+      return res.status(400).json({
+        success: false,
+        message: 'Booking already checked in'
+      });
+    }
+
+    // Kiểm tra có upload ảnh không
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Verification image is required'
+      });
+    }
+
+    // Lưu thông tin check-in
+    booking.checkIn.verificationImage = req.file.path; // Cloudinary URL
+    booking.checkIn.checkInTime = new Date();
+    booking.checkIn.actualStartTime = actualStartTime || new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    booking.checkIn.confirmedBy = req.user._id;
+    booking.status = 'in-progress';
+
+    await booking.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Đã bắt đầu! Ca làm việc đã được ghi nhận. Người nhà đã nhận thông báo.',
+      data: {
+        bookingId: booking._id,
+        checkInTime: booking.checkIn.checkInTime,
+        actualStartTime: booking.checkIn.actualStartTime,
+        verificationImage: booking.checkIn.verificationImage,
+        earnings: booking.totalPrice,
+        status: booking.status
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Xem thông tin check-in của booking
+// @route   GET /api/bookings/:id/checkin
+// @access  Private (Careseeker, Caregiver, Admin)
+const getCheckInInfo = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const booking = await Booking.findById(id)
+      .populate('caregiver', 'name email phone')
+      .populate('careseeker', 'name email phone')
+      .select('checkIn status bookingDate bookingTime totalPrice workLocation');
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found'
+      });
+    }
+
+    // Kiểm tra quyền
+    if (
+      booking.careseeker._id.toString() !== req.user._id.toString() &&
+      booking.caregiver._id.toString() !== req.user._id.toString() &&
+      req.user.role !== ROLES.ADMIN
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        bookingId: booking._id,
+        status: booking.status,
+        bookingDate: booking.bookingDate,
+        bookingTime: booking.bookingTime,
+        workLocation: booking.workLocation,
+        totalPrice: booking.totalPrice,
+        caregiver: booking.caregiver,
+        checkIn: {
+          hasCheckedIn: !!booking.checkIn.checkInTime,
+          verificationImage: booking.checkIn.verificationImage || null,
+          checkInTime: booking.checkIn.checkInTime || null,
+          actualStartTime: booking.checkIn.actualStartTime || null
+        }
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getCaregiverBookings,
   getCareseekerBookings,
@@ -442,4 +632,6 @@ module.exports = {
   updateBookingStatus,
   updateTaskStatus,
   createBooking,
+  checkInBooking,
+  getCheckInInfo
 };
