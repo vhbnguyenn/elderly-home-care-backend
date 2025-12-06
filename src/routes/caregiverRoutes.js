@@ -9,6 +9,7 @@ const {
   updateProfileStatus,
   searchCaregivers,
   getCaregiverDetail,
+  getCaregiversList,
 } = require('../controllers/caregiverController');
 const { protect, authorize } = require('../middlewares/auth');
 const { uploadCaregiverProfile } = require('../middlewares/upload');
@@ -408,6 +409,49 @@ router.put('/profile/:id/status', protect, authorize(ROLES.ADMIN), updateProfile
  *         description: Search results
  */
 router.post('/search', searchCaregivers);
+
+/**
+ * @swagger
+ * /api/caregivers:
+ *   get:
+ *     summary: Get list of caregivers (Public)
+ *     tags: [Caregiver]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: education
+ *         schema:
+ *           type: string
+ *           enum: [trung học cơ sở, trung học phổ thông, đại học, sau đại học]
+ *       - in: query
+ *         name: minExperience
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: location
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: sortBy
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: order
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *     responses:
+ *       200:
+ *         description: List of caregivers
+ */
+router.get('/', getCaregiversList);
 
 /**
  * @swagger

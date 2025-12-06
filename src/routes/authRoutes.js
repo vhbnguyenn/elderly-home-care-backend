@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const { register, login, getMe, refreshToken, logout, verifyCode, resendVerification, forgotPassword, resetPassword } = require('../controllers/authController');
-const { protect } = require('../middlewares/auth');
+const { register, login, getMe, updateProfile, changePassword, toggleUserStatus, getAllUsers, refreshToken, logout, verifyCode, resendVerification, forgotPassword, resetPassword } = require('../controllers/authController');
+const { protect, authorize } = require('../middlewares/auth');
+const { ROLES } = require('../constants');
 
 /**
  * @swagger

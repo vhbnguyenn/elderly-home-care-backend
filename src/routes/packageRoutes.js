@@ -5,8 +5,7 @@ const {
   getAllPackages,
   getPackageById,
   updatePackage,
-  deletePackage,
-  activatePackage
+  togglePackageStatus
 } = require('../controllers/packageController');
 const { protect, authorize } = require('../middlewares/auth');
 const { ROLES } = require('../constants');
@@ -137,31 +136,16 @@ router.route('/')
  *     responses:
  *       200:
  *         description: Package updated successfully
- *   delete:
- *     summary: Delete package (Admin only)
- *     tags: [Packages]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Package deleted successfully
  */
 router.route('/:id')
   .get(getPackageById) // Public
-  .put(protect, authorize(ROLES.ADMIN), updatePackage) // Admin only
-  .delete(protect, authorize(ROLES.ADMIN), deletePackage); // Admin only
+  .put(protect, authorize(ROLES.ADMIN), updatePackage); // Admin only
 
 /**
  * @swagger
- * /api/packages/{id}/activate:
+ * /api/packages/{id}/toggle:
  *   put:
- *     summary: Activate package (Admin only)
+ *     summary: Toggle package active/block status (Admin only)
  *     tags: [Packages]
  *     security:
  *       - bearerAuth: []
@@ -173,8 +157,8 @@ router.route('/:id')
  *           type: string
  *     responses:
  *       200:
- *         description: Package activated successfully
+ *         description: Package status toggled successfully (activated or blocked)
  */
-router.put('/:id/activate', protect, authorize(ROLES.ADMIN), activatePackage);
+router.put('/:id/toggle', protect, authorize(ROLES.ADMIN), togglePackageStatus);
 
 module.exports = router;
