@@ -26,8 +26,11 @@ const register = async (req, res, next) => {
 
     const { name, email, password, role, phone } = value;
 
+    // Trim và lowercase email
+    const normalizedEmail = email.trim().toLowerCase();
+
     // Kiểm tra email đã tồn tại chưa
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
       return res.status(400).json({
         success: false,
@@ -38,7 +41,7 @@ const register = async (req, res, next) => {
     // Tạo user mới (password sẽ tự động được mã hóa nhờ pre-save hook)
     const user = await User.create({
       name,
-      email,
+      email: normalizedEmail,
       password,
       role,
       phone
@@ -100,8 +103,11 @@ const login = async (req, res, next) => {
 
     const { email, password } = value;
 
+    // Trim và lowercase email
+    const normalizedEmail = email.trim().toLowerCase();
+
     // Tìm user và include password (vì mặc định select: false)
-    const user = await User.findOne({ email }).select('+password');
+    const user = await User.findOne({ email: normalizedEmail }).select('+password');
 
     if (!user) {
       return res.status(401).json({
@@ -295,9 +301,12 @@ const verifyCode = async (req, res, next) => {
       });
     }
 
+    // Trim và lowercase email
+    const normalizedEmail = email.trim().toLowerCase();
+
     // Tìm user với email và code hợp lệ
     const user = await User.findOne({
-      email,
+      email: normalizedEmail,
       verificationCode: code,
       verificationCodeExpire: { $gt: Date.now() }
     }).select('+verificationCode +verificationCodeExpire');
@@ -392,7 +401,9 @@ const resendVerification = async (req, res, next) => {
       });
     }
 
-    const user = await User.findOne({ email });
+    // Trim và lowercase email
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await User.findOne({ email: normalizedEmail });
 
     if (!user) {
       return res.status(404).json({
