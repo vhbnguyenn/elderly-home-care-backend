@@ -6,7 +6,7 @@ const cors = require('cors');
 const swaggerUi = require('swagger-ui-express');
 const connectDB = require('./config/db');
 const swaggerSpec = require('./config/swagger');
-const errorHandler = require('./middlewares/errorHandler');
+const { errorHandler } = require('./middlewares/errorHandler');
 const { initializeSocket } = require('./config/socket');
 
 const authRoutes = require('./routes/authRoutes');
@@ -28,6 +28,7 @@ const videoCallRoutes = require('./routes/videoCallRoutes');
 const caregiverAvailabilityRoutes = require('./routes/caregiverAvailabilityRoutes');
 const caregiverSkillRoutes = require('./routes/caregiverSkillRoutes');
 const courseRoutes = require('./routes/courseRoutes');
+const aiMatchingRoutes = require('./routes/aiMatchingRoutes');
 const { startWalletCronJob } = require('./utils/walletCron');
 const { initializeFirebase } = require('./utils/fcmHelper');
 
@@ -83,6 +84,7 @@ app.use('/api/video-calls', videoCallRoutes);
 app.use('/api/caregiver-availability', caregiverAvailabilityRoutes);
 app.use('/api/caregiver-skills', caregiverSkillRoutes);
 app.use('/api/courses', courseRoutes);
+app.use('/api/ai-matching', aiMatchingRoutes);
 
 app.get('/', (req, res) => {
   res.json({
