@@ -151,10 +151,17 @@ caregiverAvailabilitySchema.methods.isAvailableAt = function(date, startTime, en
   }
   
   // Check time slots
-  if (this.isAllDay) {
+  // isAllDay = true: rảnh cả ngày
+  // isAllDay = false: bận cả ngày (không rảnh)
+  if (this.isAllDay === false) {
+    return false;
+  }
+  
+  if (this.isAllDay === true) {
     return true;
   }
   
+  // Nếu không set isAllDay, check timeSlots
   return this.timeSlots.some(slot => {
     return startTime >= slot.startTime && endTime <= slot.endTime;
   });
@@ -162,6 +169,7 @@ caregiverAvailabilitySchema.methods.isAvailableAt = function(date, startTime, en
 
 // Static: Get available caregivers for a specific date and time
 caregiverAvailabilitySchema.statics.getAvailableCaregivers = async function(date, startTime, endTime) {
+  const CaregiverProfile = require('./CaregiverProfile');
   const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
   const dayOfWeek = dayNames[date.getDay()];
   
@@ -186,14 +194,40 @@ caregiverAvailabilitySchema.statics.getAvailableCaregivers = async function(date
     if (hasException) return false;
     
     // Check time slots
-    if (avail.isAllDay) return true;
+    // isAllDay = false: bận cả ngày (không rảnh)
+    if (avail.isAllDay === false) return false;
     
+    // isAllDay = true: rảnh cả ngày
+    if (avail.isAllDay === true) return true;
+    
+    // Nếu không set isAllDay, check timeSlots
     return avail.timeSlots.some(slot => {
       return startTime >= slot.startTime && endTime <= slot.endTime;
     });
   });
   
-  return available.map(a => a.caregiver);
+  const caregiversWithSchedule = available.map(a => {
+    const caregiverId = a.caregiver._id || a.caregiver;
+    return caregiverId.toString();
+  });
+  
+  // ✅ Nếu caregiver không set lịch rảnh → tự động coi là rảnh
+  // Lấy tất cả caregivers approved và thêm những người không có schedule
+  const allApprovedCaregivers = await CaregiverProfile.find({
+    profileStatus: 'approved',
+    isAvailable: true
+  }).populate('user', 'name avatar');
+  
+  const caregiversWithoutSchedule = allApprovedCaregivers
+    .filter(c => {
+      const userId = (c.user?._id || c.user)?.toString();
+      return userId && !caregiversWithSchedule.includes(userId);
+    })
+    .map(c => c.user);
+  
+  // Return cả caregivers có schedule (từ available) và không có schedule
+  const caregiversWithScheduleObjects = available.map(a => a.caregiver);
+  return [...caregiversWithScheduleObjects, ...caregiversWithoutSchedule];
 };
 
 // Static: Get caregiver's schedule for a date range

@@ -61,6 +61,11 @@ const elderlyProfileSchema = new mongoose.Schema(
       required: [true, 'Address is required'],
       trim: true
     },
+    // Toạ độ [lat, lon] để tính khoảng cách (optional)
+    locationCoordinates: {
+      type: [Number],
+      default: undefined
+    },
     phone: {
       type: String,
       trim: true
