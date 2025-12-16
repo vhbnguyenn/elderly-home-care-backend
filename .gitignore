@@ -35,3 +35,9 @@ coverage/
 # Build
 dist/
 build/
+
+# Data files (datasets, training data)
+data/*.csv
+data/*.json
+data/*.xlsx
+!data/README.md

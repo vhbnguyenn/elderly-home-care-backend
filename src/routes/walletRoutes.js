@@ -3,7 +3,8 @@ const router = express.Router();
 const {
   getMyWallet,
   getTransactions,
-  getWalletOverview
+  getWalletOverview,
+  bulkWithdrawToBank
 } = require('../controllers/walletController');
 const { protect, authorize } = require('../middlewares/auth');
 const { ROLES } = require('../constants');

@@ -119,7 +119,7 @@ const bookingSchema = new mongoose.Schema(
       },
       method: {
         type: String,
-        enum: ['vnpay', 'momo', 'vietqr', 'bank_transfer', 'cash'],
+        enum: ['payos', 'vnpay', 'momo', 'vietqr', 'bank_transfer', 'cash'],
         default: null
       },
       transactionId: {
@@ -168,6 +168,10 @@ const bookingSchema = new mongoose.Schema(
       ref: 'User'
     },
     notes: {
+      type: String,
+      trim: true
+    },
+    specialRequests: {
       type: String,
       trim: true
     }

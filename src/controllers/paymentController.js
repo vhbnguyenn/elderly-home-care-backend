@@ -1,117 +1,81 @@
+const Wallet = require('../models/Wallet');
 const Booking = require('../models/Booking');
-const { generateVietQR, generateMoMoQR, createVNPayPaymentUrl } = require('../services/paymentService');
-const { addPendingAmount } = require('./walletController');
-const { ROLES } = require('../constants');
+const AdminWithdrawal = require('../models/AdminWithdrawal');
+const AdminBankAccount = require('../models/AdminBankAccount');
+const {
+  createDepositPayment,
+  createBookingPayment,
+  processWithdrawal,
+  checkTransactionStatus,
+  verifyWebhookSignature
+} = require('../services/payosService');
 
-// @desc    Generate payment QR code khi hoàn thành booking
-// @route   POST /api/payments/generate-qr/:bookingId
-// @access  Private (Careseeker, Caregiver or Admin)
-const generatePaymentQR = async (req, res, next) => {
+const PLATFORM_FEE_PERCENTAGE = 15;
+
+// ============ CARESEEKER: NẠP TIỀN VÀO VÍ ============
+
+// @desc    Tạo link thanh toán để nạp tiền vào ví (Careseeker)
+// @route   POST /api/payments/deposit
+// @access  Private (Careseeker)
+const createDeposit = async (req, res, next) => {
   try {
-    const { bookingId } = req.params;
-    const { paymentMethod } = req.body; // 'vietqr', 'momo', 'vnpay'
+    const { amount } = req.body;
 
-    const booking = await Booking.findById(bookingId);
-
-    if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: 'Booking not found'
-      });
-    }
-
-    // Kiểm tra quyền - caregiver hoặc careseeker của booking này hoặc admin
-    const isCaregiver = booking.caregiver.toString() === req.user._id.toString();
-    const isCareseeker = booking.careseeker.toString() === req.user._id.toString();
-    const isAdmin = req.user.role === ROLES.ADMIN;
-
-    if (!isCaregiver && !isCareseeker && !isAdmin) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized'
-      });
-    }
-
-    // Kiểm tra booking đã completed chưa
-    if (booking.status !== 'completed') {
+    if (!amount || amount < 10000) {
       return res.status(400).json({
         success: false,
-        message: 'Booking must be completed before generating payment QR'
+        message: 'Số tiền nạp tối thiểu là 10,000 VND'
       });
     }
 
-    // Kiểm tra đã thanh toán chưa
-    if (booking.payment.status === 'paid') {
+    if (amount > 50000000) {
       return res.status(400).json({
         success: false,
-        message: 'Booking has already been paid'
+        message: 'Số tiền nạp tối đa là 50,000,000 VND'
       });
     }
 
-    let paymentData;
+    // Tạo payment link với PayOS
+    const paymentResult = await createDepositPayment({
+      amount,
+      userId: req.user._id,
+      description: `Nạp ${amount.toLocaleString()}đ vào ví`
+    });
 
-    // Generate QR code theo phương thức
-    if (paymentMethod === 'vietqr' || paymentMethod === 'bank_transfer') {
-      paymentData = await generateVietQR(
-        booking._id.toString(),
-        booking.totalPrice,
-        {
-          bankName: process.env.BANK_NAME || 'Vietcombank',
-          accountNumber: process.env.BANK_ACCOUNT_NUMBER || '1234567890',
-          accountName: process.env.BANK_ACCOUNT_NAME || 'CONG TY ELDERLY CARE',
-          bankCode: process.env.BANK_CODE || '970436'
-        }
-      );
-      
-      booking.payment.qrCode = paymentData.qrCodeUrl;
-      booking.payment.method = 'bank_transfer';
-      booking.payment.bankInfo = paymentData.bankInfo;
-      
-    } else if (paymentMethod === 'momo') {
-      paymentData = await generateMoMoQR(
-        booking._id.toString(),
-        booking.totalPrice,
-        {
-          phoneNumber: process.env.MOMO_PHONE || '0123456789',
-          name: process.env.MOMO_NAME || 'Elderly Care Service'
-        }
-      );
-      
-      booking.payment.qrCode = paymentData.qrCodeUrl;
-      booking.payment.method = 'momo';
-      
-    } else if (paymentMethod === 'vnpay') {
-      const ipAddr = req.headers['x-forwarded-for'] || req.connection.remoteAddress || '127.0.0.1';
-      const vnpayUrl = createVNPayPaymentUrl(
-        booking._id.toString(),
-        booking.totalPrice,
-        ipAddr,
-        `${process.env.FRONTEND_URL}/payment/callback`
-      );
-      
-      booking.payment.method = 'vnpay';
-      
-      paymentData = {
-        paymentUrl: vnpayUrl,
-        method: 'vnpay'
-      };
-    } else {
-      return res.status(400).json({
+    if (!paymentResult.success) {
+      return res.status(500).json({
         success: false,
-        message: 'Invalid payment method. Use: vietqr, momo, or vnpay'
+        message: 'Không thể tạo link thanh toán: ' + paymentResult.error
       });
     }
 
-    await booking.save();
+    // Tìm hoặc tạo ví cho user
+    let wallet = await Wallet.findOne({ caregiver: req.user._id });
+    if (!wallet) {
+      wallet = new Wallet({ caregiver: req.user._id });
+    }
+
+    // Lưu transaction pending
+    wallet.transactions.push({
+      type: 'deposit',
+      amount: amount,
+      description: `Nạp tiền qua PayOS`,
+      status: 'pending',
+      payosOrderCode: paymentResult.orderCode,
+      payosTransactionId: paymentResult.transactionId
+    });
+
+    await wallet.save();
 
     res.status(200).json({
       success: true,
-      message: 'Payment QR generated successfully',
+      message: 'Link thanh toán đã được tạo',
       data: {
-        bookingId: booking._id,
-        amount: booking.totalPrice,
-        paymentMethod: paymentMethod,
-        ...paymentData
+        orderCode: paymentResult.orderCode,
+        paymentUrl: paymentResult.paymentUrl,
+        qrCode: paymentResult.qrCode,
+        amount: amount,
+        expiresIn: '15 phút'
       }
     });
 
@@ -120,52 +84,69 @@ const generatePaymentQR = async (req, res, next) => {
   }
 };
 
-// @desc    Xác nhận thanh toán thủ công
-// @route   POST /api/payments/confirm/:bookingId
-// @access  Private (Careseeker or Admin)
-const confirmPayment = async (req, res, next) => {
+// @desc    Callback sau khi thanh toán deposit thành công (từ PayOS webhook)
+// @route   POST /api/payments/deposit/callback
+// @access  Public (Webhook)
+const depositCallback = async (req, res, next) => {
   try {
-    const { bookingId } = req.params;
-    const { transactionId, paymentMethod } = req.body;
+    const { orderCode, status, transactionId } = req.body;
 
-    const booking = await Booking.findById(bookingId);
+    // Verify signature từ PayOS
+    const signature = req.headers['x-payos-signature'];
+    if (!verifyWebhookSignature(req.body, signature)) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid signature'
+      });
+    }
 
-    if (!booking) {
+    // Tìm transaction trong ví
+    const wallet = await Wallet.findOne({
+      'transactions.payosOrderCode': orderCode
+    });
+
+    if (!wallet) {
       return res.status(404).json({
         success: false,
-        message: 'Booking not found'
+        message: 'Transaction not found'
       });
     }
 
-    // Kiểm tra quyền - careseeker, caregiver hoặc admin
-    const isCaregiver = booking.caregiver.toString() === req.user._id.toString();
-    const isCareseeker = booking.careseeker.toString() === req.user._id.toString();
-    const isAdmin = req.user.role === ROLES.ADMIN;
+    const transaction = wallet.transactions.find(
+      t => t.payosOrderCode === orderCode
+    );
 
-    if (!isCaregiver && !isCareseeker && !isAdmin) {
-      return res.status(403).json({
+    if (!transaction) {
+      return res.status(404).json({
         success: false,
-        message: 'Not authorized'
+        message: 'Transaction not found'
       });
     }
 
-    // Update payment status
-    booking.payment.status = 'paid';
-    booking.payment.paidAt = new Date();
-    booking.payment.transactionId = transactionId;
-    if (paymentMethod) {
-      booking.payment.method = paymentMethod;
+    // Cập nhật transaction
+    if (status === 'PAID' || status === 'paid') {
+      transaction.status = 'completed';
+      transaction.processedAt = new Date();
+      transaction.payosTransactionId = transactionId;
+      
+      // Cộng tiền vào ví
+      wallet.availableBalance += transaction.amount;
+      wallet.lastUpdated = new Date();
+      
+      await wallet.save();
+
+      console.log(`✅ Deposit completed: ${transaction.amount}đ for user ${wallet.caregiver}`);
+    } else if (status === 'CANCELLED' || status === 'FAILED') {
+      transaction.status = 'failed';
+      transaction.processedAt = new Date();
+      await wallet.save();
+
+      console.log(`❌ Deposit failed for order ${orderCode}`);
     }
-
-    await booking.save();
-
-    // Thêm vào pending amount (sẽ được xử lý sau 24h)
-    await addPendingAmount(bookingId);
 
     res.status(200).json({
       success: true,
-      message: 'Payment confirmed successfully. Funds will be available to caregiver in 24 hours.',
-      data: booking
+      message: 'Callback processed'
     });
 
   } catch (error) {
@@ -173,68 +154,16 @@ const confirmPayment = async (req, res, next) => {
   }
 };
 
-// @desc    Xử lý callback từ VNPay
-// @route   GET /api/payments/vnpay/callback
-// @access  Public
-const handleVNPayCallback = async (req, res, next) => {
-  try {
-    const vnpParams = req.query;
-    const secureHash = vnpParams.vnp_SecureHash;
-    
-    delete vnpParams.vnp_SecureHash;
-    delete vnpParams.vnp_SecureHashType;
-    
-    // Verify signature
-    const crypto = require('crypto-js');
-    const vnpHashSecret = process.env.VNPAY_HASH_SECRET || 'YOUR_HASH_SECRET';
-    
-    const sortedParams = Object.keys(vnpParams)
-      .sort()
-      .reduce((obj, key) => {
-        obj[key] = vnpParams[key];
-        return obj;
-      }, {});
-    
-    const signData = new URLSearchParams(sortedParams).toString();
-    const hmac = crypto.HmacSHA512(signData, vnpHashSecret);
-    const signed = hmac.toString(crypto.enc.Hex);
-    
-    if (secureHash === signed) {
-      const bookingIdMatch = vnpParams.vnp_TxnRef.match(/^(.+?)_/);
-      const bookingId = bookingIdMatch ? bookingIdMatch[1] : vnpParams.vnp_TxnRef;
-      
-      const booking = await Booking.findById(bookingId);
-      
-      if (booking && vnpParams.vnp_ResponseCode === '00') {
-        booking.payment.status = 'paid';
-        booking.payment.paidAt = new Date();
-        booking.payment.transactionId = vnpParams.vnp_TransactionNo;
-        booking.payment.method = 'vnpay';
-        await booking.save();
-        
-        res.redirect(`${process.env.FRONTEND_URL}/payment/success?bookingId=${bookingId}`);
-      } else {
-        res.redirect(`${process.env.FRONTEND_URL}/payment/failed?bookingId=${bookingId}`);
-      }
-    } else {
-      res.redirect(`${process.env.FRONTEND_URL}/payment/failed?error=invalid_signature`);
-    }
-  } catch (error) {
-    next(error);
-  }
-};
+// ============ BOOKING: THANH TOÁN ============
 
-// @desc    Lấy thông tin thanh toán của booking
-// @route   GET /api/payments/:bookingId
-// @access  Private
-const getPaymentInfo = async (req, res, next) => {
+// @desc    Tạo link thanh toán cho booking
+// @route   POST /api/payments/booking/:bookingId
+// @access  Private (Careseeker)
+const createBookingPaymentLink = async (req, res, next) => {
   try {
     const { bookingId } = req.params;
 
-    const booking = await Booking.findById(bookingId)
-      .select('payment totalPrice status')
-      .populate('careseeker', 'name email')
-      .populate('caregiver', 'name email');
+    const booking = await Booking.findById(bookingId);
 
     if (!booking) {
       return res.status(404).json({
@@ -244,24 +173,314 @@ const getPaymentInfo = async (req, res, next) => {
     }
 
     // Kiểm tra quyền
-    if (
-      booking.careseeker._id.toString() !== req.user._id.toString() &&
-      booking.caregiver._id.toString() !== req.user._id.toString() &&
-      req.user.role !== ROLES.ADMIN
-    ) {
+    if (booking.careseeker.toString() !== req.user._id.toString()) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized'
       });
     }
 
+    // Kiểm tra đã thanh toán chưa
+    if (booking.payment.status === 'paid') {
+      return res.status(400).json({
+        success: false,
+        message: 'Booking đã được thanh toán'
+      });
+    }
+
+    // Tạo payment link với PayOS
+    const paymentResult = await createBookingPayment({
+      amount: booking.totalPrice,
+      bookingId: booking._id,
+      userId: req.user._id,
+      description: `Thanh toán booking ${booking._id}`
+    });
+
+    if (!paymentResult.success) {
+      return res.status(500).json({
+        success: false,
+        message: 'Không thể tạo link thanh toán: ' + paymentResult.error
+      });
+    }
+
+    // Cập nhật booking với payment info
+    booking.payment.method = 'payos';
+    booking.payment.transactionId = paymentResult.transactionId;
+    booking.payment.qrCode = paymentResult.qrCode;
+
+    await booking.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Link thanh toán đã được tạo',
+      data: {
+        bookingId: booking._id,
+        orderCode: paymentResult.orderCode,
+        paymentUrl: paymentResult.paymentUrl,
+        qrCode: paymentResult.qrCode,
+        amount: booking.totalPrice,
+        expiresIn: '15 phút'
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Callback sau khi thanh toán booking thành công
+// @route   POST /api/payments/booking/callback
+// @access  Public (Webhook)
+const bookingPaymentCallback = async (req, res, next) => {
+  try {
+    const { orderCode, status, transactionId } = req.body;
+
+    // Verify signature
+    const signature = req.headers['x-payos-signature'];
+    if (!verifyWebhookSignature(req.body, signature)) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid signature'
+      });
+    }
+
+    // Extract booking ID from orderCode (BOOKING_{bookingId}_{timestamp})
+    const bookingId = orderCode.split('_')[1];
+
+    const booking = await Booking.findById(bookingId);
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found'
+      });
+    }
+
+    // Cập nhật payment status
+    if (status === 'PAID' || status === 'paid') {
+      booking.payment.status = 'paid';
+      booking.payment.paidAt = new Date();
+      booking.payment.transactionId = transactionId;
+      
+      await booking.save();
+
+      console.log(`✅ Booking ${bookingId} payment completed`);
+    } else if (status === 'CANCELLED' || status === 'FAILED') {
+      booking.payment.status = 'failed';
+      await booking.save();
+
+      console.log(`❌ Booking ${bookingId} payment failed`);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Callback processed'
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ============ CAREGIVER: RÚT TIỀN ============
+
+// @desc    Lấy thông tin tài khoản ngân hàng caregiver
+// @route   GET /api/payments/caregiver/bank-account
+// @access  Private (Caregiver)
+const getCaregiverBankAccount = async (req, res, next) => {
+  try {
+    const CaregiverProfile = require('../models/CaregiverProfile');
+    
+    const profile = await CaregiverProfile.findOne({ user: req.user._id });
+
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        message: 'Caregiver profile not found'
+      });
+    }
+
     res.status(200).json({
       success: true,
       data: {
-        bookingId: booking._id,
-        totalPrice: booking.totalPrice,
-        payment: booking.payment,
-        bookingStatus: booking.status
+        bankAccount: profile.bankAccount || null
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Cập nhật thông tin tài khoản ngân hàng caregiver
+// @route   PUT /api/payments/caregiver/bank-account
+// @access  Private (Caregiver)
+const updateCaregiverBankAccount = async (req, res, next) => {
+  try {
+    const { bankName, bankCode, accountNumber, accountName } = req.body;
+
+    if (!bankName || !bankCode || !accountNumber || !accountName) {
+      return res.status(400).json({
+        success: false,
+        message: 'Vui lòng điền đầy đủ thông tin tài khoản ngân hàng'
+      });
+    }
+
+    const CaregiverProfile = require('../models/CaregiverProfile');
+    
+    const profile = await CaregiverProfile.findOne({ user: req.user._id });
+
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        message: 'Caregiver profile not found'
+      });
+    }
+
+    profile.bankAccount = {
+      bankName,
+      bankCode,
+      accountNumber,
+      accountName
+    };
+
+    await profile.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Cập nhật tài khoản ngân hàng thành công',
+      data: {
+        bankAccount: profile.bankAccount
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Caregiver rút tiền về ngân hàng
+// @route   POST /api/payments/caregiver/withdraw
+// @access  Private (Caregiver)
+const caregiverWithdraw = async (req, res, next) => {
+  try {
+    const { amount, note } = req.body;
+
+    if (!amount || amount < 50000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Số tiền rút tối thiểu là 50,000 VND'
+      });
+    }
+
+    // Kiểm tra tài khoản ngân hàng
+    const CaregiverProfile = require('../models/CaregiverProfile');
+    const profile = await CaregiverProfile.findOne({ user: req.user._id });
+
+    if (!profile || !profile.bankAccount) {
+      return res.status(400).json({
+        success: false,
+        message: 'Vui lòng cập nhật thông tin tài khoản ngân hàng trước khi rút tiền'
+      });
+    }
+
+    // Kiểm tra số dư
+    let wallet = await Wallet.findOne({ caregiver: req.user._id });
+    
+    if (!wallet || wallet.availableBalance < amount) {
+      return res.status(400).json({
+        success: false,
+        message: `Số dư không đủ. Số dư khả dụng: ${wallet?.availableBalance.toLocaleString() || 0} VND`
+      });
+    }
+
+    // Tạo transaction pending
+    wallet.transactions.push({
+      type: 'withdrawal',
+      amount: -amount,
+      description: note || 'Rút tiền về ngân hàng',
+      status: 'processing'
+    });
+
+    await wallet.save();
+
+    const withdrawalId = wallet.transactions[wallet.transactions.length - 1]._id;
+
+    // Xử lý rút tiền qua PayOS
+    const transferResult = await processWithdrawal({
+      amount,
+      bankAccount: profile.bankAccount,
+      withdrawalId,
+      description: note || `Caregiver withdrawal ${req.user._id}`,
+      type: 'caregiver'
+    });
+
+    // Cập nhật transaction
+    const transaction = wallet.transactions.id(withdrawalId);
+
+    if (transferResult.success) {
+      transaction.status = 'completed';
+      transaction.processedAt = new Date();
+      transaction.payosOrderCode = transferResult.orderCode;
+      transaction.payosTransactionId = transferResult.transactionId;
+      
+      // Trừ tiền từ ví
+      wallet.availableBalance -= amount;
+      wallet.lastUpdated = new Date();
+    } else {
+      transaction.status = 'failed';
+      transaction.processedAt = new Date();
+    }
+
+    await wallet.save();
+
+    res.status(200).json({
+      success: transferResult.success,
+      message: transferResult.success 
+        ? 'Rút tiền thành công' 
+        : 'Rút tiền thất bại: ' + transferResult.error,
+      data: {
+        withdrawalId,
+        amount,
+        status: transaction.status,
+        bankAccount: {
+          bankName: profile.bankAccount.bankName,
+          accountNumber: profile.bankAccount.accountNumber,
+          accountName: profile.bankAccount.accountName
+        },
+        processedAt: transaction.processedAt
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ============ KIỂM TRA TRẠNG THÁI ============
+
+// @desc    Kiểm tra trạng thái transaction
+// @route   GET /api/payments/status/:orderCode
+// @access  Private
+const getPaymentStatus = async (req, res, next) => {
+  try {
+    const { orderCode } = req.params;
+
+    const statusResult = await checkTransactionStatus(orderCode);
+
+    if (!statusResult.success) {
+      return res.status(500).json({
+        success: false,
+        message: 'Không thể kiểm tra trạng thái: ' + statusResult.error
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        orderCode,
+        status: statusResult.status,
+        details: statusResult.data
       }
     });
 
@@ -271,8 +490,19 @@ const getPaymentInfo = async (req, res, next) => {
 };
 
 module.exports = {
-  generatePaymentQR,
-  confirmPayment,
-  handleVNPayCallback,
-  getPaymentInfo
+  // Deposit
+  createDeposit,
+  depositCallback,
+  
+  // Booking Payment
+  createBookingPaymentLink,
+  bookingPaymentCallback,
+  
+  // Caregiver Withdrawal
+  getCaregiverBankAccount,
+  updateCaregiverBankAccount,
+  caregiverWithdraw,
+  
+  // Status Check
+  getPaymentStatus
 };

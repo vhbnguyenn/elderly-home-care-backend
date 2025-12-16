@@ -58,6 +58,11 @@ const caregiverProfileSchema = new mongoose.Schema(
       type: String,
       trim: true
     },
+    // Toạ độ [lat, lon] để tính khoảng cách (optional)
+    locationCoordinates: {
+      type: [Number],
+      default: undefined
+    },
     idCardNumber: {
       type: String,
       required: [true, 'ID card number is required'],
@@ -138,6 +143,26 @@ const caregiverProfileSchema = new mongoose.Schema(
     rejectionReason: {
       type: String,
       trim: true
+    },
+    
+    // Thông tin tài khoản ngân hàng (để rút tiền)
+    bankAccount: {
+      bankName: {
+        type: String,
+        trim: true
+      },
+      bankCode: {
+        type: String,
+        trim: true
+      },
+      accountNumber: {
+        type: String,
+        trim: true
+      },
+      accountName: {
+        type: String,
+        trim: true
+      }
     }
   },
   {

@@ -1,7 +1,31 @@
+const axios = require('axios');
 const CaregiverProfile = require('../models/CaregiverProfile');
 const User = require('../models/User');
+const CaregiverSkill = require('../models/CaregiverSkill');
+const CaregiverAvailability = require('../models/CaregiverAvailability');
+const ElderlyProfile = require('../models/ElderlyProfile');
+const Package = require('../models/Package');
+const { rerankCandidates } = require('../services/groqMatchingService');
 const { createCaregiverProfileSchema } = require('../utils/validation');
 const { ROLES } = require('../constants');
+
+// Geocode địa chỉ (dùng Nominatim - không cần API key)
+async function geocodeAddress(address) {
+  const url = 'https://nominatim.openstreetmap.org/search';
+  const params = {
+    q: address,
+    format: 'json',
+    addressdetails: 0,
+    limit: 1,
+  };
+  const headers = {
+    'User-Agent': 'elderly-home-care-backend/1.0',
+  };
+  const res = await axios.get(url, { params, headers, timeout: 10000 });
+  const first = Array.isArray(res.data) ? res.data[0] : null;
+  if (!first || !first.lat || !first.lon) return null;
+  return [parseFloat(first.lat), parseFloat(first.lon)];
+}
 
 // @desc    Tạo hồ sơ caregiver
 // @route   POST /api/caregiver/profile
@@ -110,6 +134,19 @@ const createProfile = async (req, res, next) => {
       }))
     };
 
+    // Geocode địa chỉ caregiver (ưu tiên tạm trú, fallback thường trú)
+    try {
+      const cgAddress = value.temporaryAddress || value.permanentAddress;
+      if (cgAddress) {
+        const coords = await geocodeAddress(cgAddress);
+        if (coords) {
+          profileData.locationCoordinates = coords;
+        }
+      }
+    } catch (geoErr) {
+      console.warn('Geocode caregiver address failed:', geoErr.message);
+    }
+
     // Tạo profile
     const profile = await CaregiverProfile.create(profileData);
 
@@ -196,6 +233,18 @@ const updateProfile = async (req, res, next) => {
     // Update profile image nếu có
     if (req.files?.profileImage) {
       updateFields.profileImage = req.files.profileImage[0].path; // Cloudinary URL
+    }
+
+    // Geocode nếu có địa chỉ tạm trú mới
+    if (updateFields.temporaryAddress) {
+      try {
+        const coords = await geocodeAddress(updateFields.temporaryAddress);
+        if (coords) {
+          updateFields.locationCoordinates = coords;
+        }
+      } catch (geoErr) {
+        console.warn('Geocode caregiver update failed:', geoErr.message);
+      }
     }
 
     // Update profile
@@ -323,46 +372,429 @@ const updateProfileStatus = async (req, res, next) => {
   }
 };
 
-// @desc    Search caregivers with filters
+// @desc    Search caregivers với base scoring + Groq rerank (location bắt buộc)
 // @route   POST /api/caregivers/search
-// @access  Public
+// @access  Private (Careseeker)
 const searchCaregivers = async (req, res, next) => {
   try {
-    const { filters = {} } = req.body;
+    const {
+      elderlyId,
+      location, // { address, coordinates?, district? } - required
+      packageId,
+      skills = [],
+      requiredCertificates = [],
+      preferredCertificates = [],
+      preferredGender = null,
+      minExperience = 0,
+      maxDistance = 7, // km
+      override = {}, // { healthConditions, personality, specialNeeds }
+    } = req.body || {};
 
-    // Manual browse with filters
-    const filterQuery = { profileStatus: 'approved', isAvailable: true };
-
-    if (filters.skills?.length > 0) {
-      filterQuery.specializations = { $in: filters.skills };
+    if (!location || !location.address) {
+      return res.status(400).json({
+        success: false,
+        message: 'location.address is required',
+      });
     }
 
-    if (filters.location) {
-      // Simple location filter (can be enhanced with geospatial queries)
-      filterQuery.$or = [
-        { permanentAddress: { $regex: filters.location, $options: 'i' } },
-        { temporaryAddress: { $regex: filters.location, $options: 'i' } },
-      ];
+    // Geocode địa chỉ careseeker nếu chưa có coordinates
+    let resolvedLocation = { ...location };
+    if (
+      (!resolvedLocation.coordinates ||
+        !Array.isArray(resolvedLocation.coordinates) ||
+        resolvedLocation.coordinates.length !== 2) &&
+      resolvedLocation.address
+    ) {
+      try {
+        const coords = await geocodeAddress(resolvedLocation.address);
+        if (coords) {
+          resolvedLocation.coordinates = coords;
+        }
+      } catch (geoErr) {
+        console.warn('Geocode careseeker location failed:', geoErr.message);
+      }
     }
 
-    if (filters.minRating) {
-      filterQuery.rating = { $gte: filters.minRating };
+    // Elderly profile (health/personality/specialNeeds only)
+    let elderlyProfile = null;
+    if (elderlyId) {
+      elderlyProfile = await ElderlyProfile.findById(elderlyId).lean();
+      if (!elderlyProfile) {
+        return res.status(404).json({
+          success: false,
+          message: 'Elderly profile not found',
+        });
+      }
     }
 
-    if (filters.packageType) {
-      filterQuery['packages.packageType'] = filters.packageType;
+    // Package (nếu có) để lấy yêu cầu skill/cert (nếu schema có)
+    let packageData = null;
+    if (packageId) {
+      packageData = await Package.findById(packageId).lean();
     }
 
-    caregivers = await CaregiverProfile.find(filterQuery)
-      .populate('user', 'name email')
-      .select('-__v -idCardNumber -idCardFrontImage -idCardBackImage')
-      .sort({ rating: -1, yearsOfExperience: -1 });
+    // Merge requirements
+    const packageRequiredSkills = packageData?.requiredSkills || [];
+    const packageRequiredCerts = packageData?.requiredCertificates || [];
+    const packageOptionalCerts = packageData?.optionalCertificates || [];
 
-    res.json({
+    const finalRequiredSkills = Array.from(
+      new Set([...(skills || []), ...packageRequiredSkills])
+    );
+    const finalRequiredCerts = Array.from(
+      new Set([...(requiredCertificates || []), ...packageRequiredCerts])
+    );
+    const finalPreferredCerts = Array.from(
+      new Set([...(preferredCertificates || []), ...packageOptionalCerts])
+    );
+
+    const finalHealthConditions =
+      override.healthConditions ?? elderlyProfile?.medicalConditions ?? [];
+    const finalPersonality =
+      override.personality ?? elderlyProfile?.personalityType ?? null;
+    const finalSpecialNeeds =
+      override.specialNeeds ?? elderlyProfile?.specialNeeds ?? null;
+
+    // Lọc caregivers: approved, gender/minExperience nếu có
+    const filterQuery = { profileStatus: 'approved' };
+    if (preferredGender) {
+      filterQuery.gender = preferredGender === 'female' ? 'Nữ' : 'Nam';
+    }
+    if (minExperience > 0) {
+      filterQuery.yearsOfExperience = { $gte: minExperience };
+    }
+
+    const caregivers = await CaregiverProfile.find(filterQuery)
+      .populate('user', 'name email avatar')
+      .lean();
+
+    if (!caregivers || caregivers.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          total: 0,
+          returned: 0,
+          matches: [],
+          suggestions: {
+            relaxDistance: true,
+            removeFilters: finalRequiredSkills.length ? ['skills'] : [],
+            alternativePackages: [],
+            message: 'Không tìm thấy caregiver. Thử giảm bớt yêu cầu.',
+          },
+        },
+      });
+    }
+
+    // Lấy skills cho caregivers
+    const caregiverIds = caregivers.map((c) => c.user?._id || c.user);
+    const skillsByCaregiver = await CaregiverSkill.find({
+      userId: { $in: caregiverIds },
+    })
+      .select('userId skillName')
+      .lean();
+
+    const skillsMap = caregiverIds.reduce((acc, id) => {
+      acc[id.toString()] = [];
+      return acc;
+    }, {});
+    skillsByCaregiver.forEach((s) => {
+      const key = s.userId?.toString();
+      if (key && skillsMap[key]) skillsMap[key].push(s.skillName);
+    });
+
+    // Hàm Haversine (nếu có tọa độ)
+    const haversineKm = (lat1, lon1, lat2, lon2) => {
+      const R = 6371;
+      const dLat = ((lat2 - lat1) * Math.PI) / 180;
+      const dLon = ((lon2 - lon1) * Math.PI) / 180;
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos((lat1 * Math.PI) / 180) *
+          Math.cos((lat2 * Math.PI) / 180) *
+          Math.sin(dLon / 2) ** 2;
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    };
+
+    const weights = {
+      geographic: 30,
+      skills: 30,
+      health: 20,
+      personality: 15,
+      availability: 10,
+      certificates: 15,
+      previous: 10,
+      rating: 5,
+    };
+    const maxBase = 145;
+
+    // Filter + base scoring
+    const baseCandidates = caregivers
+      .map((cg) => {
+        const id = cg.user?._id?.toString() || cg.user?.toString();
+        const cgSkills = skillsMap[id] || [];
+        const expYears = cg.yearsOfExperience || 0;
+
+        // Distance (nếu có tọa độ)
+        let distanceKm = null;
+        if (
+          resolvedLocation?.coordinates?.length === 2 &&
+          Array.isArray(cg.locationCoordinates) &&
+          cg.locationCoordinates.length === 2
+        ) {
+          distanceKm = haversineKm(
+            resolvedLocation.coordinates[0],
+            resolvedLocation.coordinates[1],
+            cg.locationCoordinates[0],
+            cg.locationCoordinates[1]
+          );
+        }
+
+        // Filters bắt buộc
+        if (
+          finalRequiredSkills.length > 0 &&
+          finalRequiredSkills.some(
+            (s) => !cgSkills.map((x) => x?.toLowerCase()).includes(s?.toLowerCase())
+          )
+        ) {
+          return null;
+        }
+
+        const certNames = cg.certificates?.map((c) => c.name?.toLowerCase()) || [];
+        if (
+          finalRequiredCerts.length > 0 &&
+          finalRequiredCerts.some((r) => !certNames.includes(r?.toLowerCase()))
+        ) {
+          return null;
+        }
+
+        if (distanceKm !== null && distanceKm > maxDistance) {
+          return null;
+        }
+
+        // Geographic score
+        let geographicScore = weights.geographic;
+        if (distanceKm !== null) {
+          if (distanceKm <= 1) geographicScore = weights.geographic;
+          else if (distanceKm <= maxDistance) {
+            const ratio = 1 - (distanceKm - 1) / (maxDistance - 1 || 1);
+            geographicScore = Math.max(0, ratio * weights.geographic);
+          } else {
+            geographicScore = 0;
+          }
+        }
+
+        // Skills score
+        let skillsScore = weights.skills;
+        if (finalRequiredSkills.length > 0) {
+          const matched = finalRequiredSkills.filter((s) =>
+            cgSkills.map((x) => x?.toLowerCase()).includes(s?.toLowerCase())
+          ).length;
+          const pct = matched / finalRequiredSkills.length;
+          skillsScore = Math.min(weights.skills, pct * weights.skills);
+        }
+
+        // Health score
+        let healthScore = weights.health;
+        if (finalHealthConditions?.length) {
+          const matchedHealth = finalHealthConditions.filter((cond) =>
+            cgSkills.map((x) => x?.toLowerCase()).includes(cond?.toLowerCase())
+          ).length;
+          const pct = matchedHealth / finalHealthConditions.length;
+          healthScore = pct === 0 ? weights.health * 0.5 : Math.min(weights.health, pct * weights.health);
+        }
+
+        // Personality score (không có dữ liệu -> neutral)
+        const personalityScore = weights.personality;
+
+        // Availability (chưa kiểm tra chi tiết -> neutral cao)
+        const availabilityScore = weights.availability;
+
+        // Certificates bonus
+        let certScore = 0;
+        if (finalRequiredCerts.length > 0) {
+          const allHave = finalRequiredCerts.every((r) =>
+            certNames.includes(r?.toLowerCase())
+          );
+          certScore += allHave ? weights.certificates * 0.7 : 0;
+        }
+        if (finalPreferredCerts.length > 0) {
+          const prefMatched = finalPreferredCerts.filter((r) =>
+            certNames.includes(r?.toLowerCase())
+          ).length;
+          certScore += Math.min(weights.certificates * 0.3, prefMatched * 2);
+        }
+        certScore = Math.min(weights.certificates, certScore);
+
+        // Previous & rating (chưa có dữ liệu)
+        const previousScore = 0;
+        const ratingScore = 0;
+
+        const baseScore =
+          geographicScore +
+          skillsScore +
+          healthScore +
+          personalityScore +
+          availabilityScore +
+          certScore +
+          previousScore +
+          ratingScore;
+
+        return {
+          caregiverId: id,
+          name: cg.user?.name || cg.fullName || 'Caregiver',
+          gender: cg.gender,
+          experienceYears: expYears,
+          address: cg.permanentAddress,
+          distance: distanceKm,
+          skills: cgSkills,
+          certificates: certNames,
+          baseScore,
+          breakdown: {
+            geographic: geographicScore,
+            skills: skillsScore,
+            health: healthScore,
+            personality: personalityScore,
+            availability: availabilityScore,
+            certificates: certScore,
+            previousBooking: previousScore,
+            rating: ratingScore,
+          },
+        };
+      })
+      .filter(Boolean);
+
+    if (!baseCandidates.length) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          total: 0,
+          returned: 0,
+          matches: [],
+          suggestions: {
+            relaxDistance: true,
+            removeFilters: finalRequiredSkills.length ? ['skills'] : [],
+            alternativePackages: [],
+            message: 'Không tìm thấy caregiver sau khi áp filters bắt buộc.',
+          },
+        },
+      });
+    }
+
+    const sortedBase = baseCandidates.sort((a, b) => b.baseScore - a.baseScore);
+    const topForRerank = sortedBase.slice(0, 15);
+
+    const careseekerContext = {
+      location: resolvedLocation,
+      healthConditions: finalHealthConditions,
+      personality: finalPersonality,
+      specialNeeds: finalSpecialNeeds,
+      requiredSkills: finalRequiredSkills,
+      requiredCertificates: finalRequiredCerts,
+      preferredCertificates: finalPreferredCerts,
+      preferredGender,
+      minExperience,
+      maxDistance,
+    };
+
+    let reranked = null;
+    try {
+      // Normalize baseScore to 0-100 cho LLM, lưu delta ±10
+      const normalized = topForRerank.map((c) => ({
+        ...c,
+        baseScore: Math.min(100, Math.round((c.baseScore / maxBase) * 100)),
+      }));
+      const llmResult = await rerankCandidates(careseekerContext, normalized);
+      const llmMap = llmResult.reduce((acc, r) => {
+        acc[r.caregiverId] = r;
+        return acc;
+      }, {});
+
+      reranked = topForRerank.map((c) => {
+        const llm = llmMap[c.caregiverId];
+        const baseNormalized = Math.min(100, Math.round((c.baseScore / maxBase) * 100));
+        if (!llm) {
+          return {
+            ...c,
+            finalScore: baseNormalized,
+            delta: 0,
+            reasoning: 'Fallback to base score (LLM missing entry).',
+            strengths: [],
+            concerns: [],
+            recommendation: baseNormalized >= 70 ? 'HIGHLY_RECOMMENDED' : 'RECOMMENDED',
+          };
+        }
+        const finalScore = Math.min(100, Math.max(0, llm.adjustedScore || llm.finalScore || baseNormalized));
+        return {
+          ...c,
+          finalScore,
+          delta: llm.delta ?? finalScore - baseNormalized,
+          reasoning: llm.reasoning || 'LLM rerank applied',
+          strengths: llm.strengths || [],
+          concerns: llm.concerns || [],
+          recommendation: llm.recommendation || (finalScore >= 70 ? 'HIGHLY_RECOMMENDED' : 'RECOMMENDED'),
+          baseScoreNormalized: baseNormalized,
+        };
+      });
+    } catch (err) {
+      console.error('Groq rerank failed, fallback to base. Reason:', err.message);
+      reranked = topForRerank.map((c) => ({
+        ...c,
+        finalScore: Math.min(100, Math.round((c.baseScore / maxBase) * 100)),
+        delta: 0,
+        reasoning: 'Fallback base score (Groq rerank failed).',
+        strengths: [],
+        concerns: [],
+        recommendation: c.baseScore >= 100 ? 'HIGHLY_RECOMMENDED' : 'RECOMMENDED',
+      }));
+    }
+
+    const finalSorted = reranked.sort((a, b) => b.finalScore - a.finalScore);
+    const returned = finalSorted.slice(0, 10);
+
+    res.status(200).json({
       success: true,
-      count: caregivers.length,
-      data: caregivers,
-      searchType: 'manual',
+      data: {
+        total: finalSorted.length,
+        returned: returned.length,
+        matches: returned.map((m) => ({
+          caregiverId: m.caregiverId,
+          name: m.name,
+          gender: m.gender,
+          experienceYears: m.experienceYears,
+          location: {
+            distance: m.distance,
+            distanceText: m.distance ? `${m.distance.toFixed(1)} km` : null,
+            address: m.address,
+          },
+          match: {
+            score: Math.round(m.finalScore),
+            baseScore: Math.round(Math.min(100, (m.baseScore / maxBase) * 100)),
+            delta: Math.round(m.delta),
+            level:
+              m.finalScore >= 70 ? 'HIGH' : m.finalScore >= 55 ? 'MEDIUM' : 'LOW',
+            breakdown: m.breakdown,
+            reasoning: m.reasoning,
+            strengths: m.strengths || [],
+            concerns: m.concerns || [],
+            recommendation: m.recommendation,
+          },
+          highlights: {
+            skills: m.skills?.slice(0, 5) || [],
+            certificates: m.certificates?.slice(0, 5) || [],
+            specializations: [],
+          },
+        })),
+        suggestions:
+          returned.length < 5
+            ? {
+                relaxDistance: true,
+                removeFilters: finalRequiredSkills.length ? ['skills'] : [],
+                alternativePackages: [],
+                message: 'Kết quả ít, thử giảm yêu cầu hoặc mở rộng khoảng cách.',
+              }
+            : {},
+      },
     });
   } catch (error) {
     next(error);
