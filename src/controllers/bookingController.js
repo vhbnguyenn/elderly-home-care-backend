@@ -61,7 +61,7 @@ const getBookingDetail = async (req, res, next) => {
     if (!booking) {
       return res.status(404).json({
         success: false,
-        message: 'Booking not found'
+        message: 'Không tìm thấy lịch hẹn'
       });
     }
 
@@ -69,6 +69,7 @@ const getBookingDetail = async (req, res, next) => {
     if (req.user.role === ROLES.ADMIN) {
       return res.status(200).json({
         success: true,
+        message: 'Lấy chi tiết lịch hẹn thành công',
         data: booking
       });
     }
@@ -85,12 +86,13 @@ const getBookingDetail = async (req, res, next) => {
     if (!isCaregiver && !isCareseeker) {
       return res.status(403).json({
         success: false,
-        message: 'Not authorized to access this booking'
+        message: 'Bạn không có quyền truy cập lịch hẹn này'
       });
     }
 
     res.status(200).json({
       success: true,
+      message: 'Lấy chi tiết lịch hẹn thành công',
       data: booking
     });
 
@@ -181,7 +183,7 @@ const updateBookingStatus = async (req, res, next) => {
     if (!booking) {
       return res.status(404).json({
         success: false,
-        message: 'Booking not found'
+        message: 'Không tìm thấy lịch hẹn'
       });
     }
 
@@ -192,7 +194,7 @@ const updateBookingStatus = async (req, res, next) => {
     if (!isCaregiver && !isCareseeker && req.user.role !== ROLES.ADMIN) {
       return res.status(403).json({
         success: false,
-        message: 'Not authorized'
+        message: 'Bạn không có quyền thực hiện thao tác này'
       });
     }
 
@@ -201,7 +203,7 @@ const updateBookingStatus = async (req, res, next) => {
     if (!validStatuses.includes(status)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid status'
+        message: 'Trạng thái không hợp lệ'
       });
     }
 
@@ -209,7 +211,7 @@ const updateBookingStatus = async (req, res, next) => {
     if (isCaregiver && !['confirmed', 'cancelled', 'in-progress', 'completed'].includes(status)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid status for caregiver'
+        message: 'Trạng thái không hợp lệ đối với caregiver'
       });
     }
 
@@ -219,7 +221,7 @@ const updateBookingStatus = async (req, res, next) => {
       if (!cancellationReason) {
         return res.status(400).json({
           success: false,
-          message: 'Cancellation reason is required'
+          message: 'Cần cung cấp lý do hủy'
         });
       }
       booking.cancellationReason = cancellationReason;
@@ -236,7 +238,7 @@ const updateBookingStatus = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: `Booking ${status} successfully`,
+      message: `Cập nhật trạng thái lịch hẹn thành công: ${status}`,
       data: booking
     });
 
@@ -258,7 +260,7 @@ const updateTaskStatus = async (req, res, next) => {
     if (!booking) {
       return res.status(404).json({
         success: false,
-        message: 'Booking not found'
+        message: 'Không tìm thấy lịch hẹn'
       });
     }
 
@@ -266,7 +268,7 @@ const updateTaskStatus = async (req, res, next) => {
     if (booking.caregiver.toString() !== req.user._id.toString() && req.user.role !== ROLES.ADMIN) {
       return res.status(403).json({
         success: false,
-        message: 'Only assigned caregiver can update tasks'
+        message: 'Chỉ caregiver được phân công mới có thể cập nhật công việc'
       });
     }
 
@@ -276,7 +278,7 @@ const updateTaskStatus = async (req, res, next) => {
     if (!task) {
       return res.status(404).json({
         success: false,
-        message: 'Task not found'
+        message: 'Không tìm thấy công việc'
       });
     }
 
@@ -302,7 +304,7 @@ const updateTaskStatus = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: 'Task updated successfully',
+      message: 'Cập nhật công việc thành công',
       data: booking
     });
 
@@ -330,7 +332,7 @@ const createBooking = async (req, res, next) => {
     if (!caregiverId || !packageId || !elderlyProfileId || !startDate || !startTime || !address) {
       return res.status(400).json({
         success: false,
-        message: 'All required fields must be provided',
+        message: 'Vui lòng nhập đầy đủ các thông tin bắt buộc',
       });
     }
 
@@ -339,7 +341,7 @@ const createBooking = async (req, res, next) => {
     if (!packageInfo || !packageInfo.isActive) {
       return res.status(404).json({
         success: false,
-        message: 'Package not found or inactive',
+        message: 'Không tìm thấy gói dịch vụ hoặc gói đang bị tắt',
       });
     }
 
@@ -348,7 +350,7 @@ const createBooking = async (req, res, next) => {
     if (!caregiverProfile || caregiverProfile.profileStatus !== 'approved') {
       return res.status(404).json({
         success: false,
-        message: 'Caregiver not found or not approved',
+        message: 'Không tìm thấy caregiver hoặc hồ sơ chưa được duyệt',
       });
     }
 
@@ -358,7 +360,7 @@ const createBooking = async (req, res, next) => {
     if (!elderlyProfile || elderlyProfile.careseeker.toString() !== req.user._id.toString()) {
       return res.status(404).json({
         success: false,
-        message: 'Elderly profile not found or unauthorized',
+        message: 'Không tìm thấy hồ sơ người già hoặc bạn không có quyền',
       });
     }
 
@@ -369,7 +371,7 @@ const createBooking = async (req, res, next) => {
     if (!startTime || !/^\d{2}:\d{2}$/.test(startTime)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid startTime format. Use HH:mm (e.g., 08:00)',
+        message: 'Định dạng giờ bắt đầu không hợp lệ. Dùng HH:mm (ví dụ: 08:00)',
       });
     }
 
@@ -377,7 +379,7 @@ const createBooking = async (req, res, next) => {
     if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid startDate format. Use YYYY-MM-DD (e.g., 2025-12-10)',
+        message: 'Định dạng ngày bắt đầu không hợp lệ. Dùng YYYY-MM-DD (ví dụ: 2025-12-10)',
       });
     }
 
@@ -386,7 +388,7 @@ const createBooking = async (req, res, next) => {
     if (isNaN(bookingDateTime.getTime())) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid date or time value',
+        message: 'Giá trị ngày hoặc giờ không hợp lệ',
       });
     }
 
@@ -402,7 +404,7 @@ const createBooking = async (req, res, next) => {
     if (hoursUntilBooking < requiredHours) {
       return res.status(400).json({
         success: false,
-        message: `${packageInfo.packageType} package requires at least ${requiredHours} hours advance booking`,
+        message: `Gói ${packageInfo.packageType} yêu cầu đặt trước ít nhất ${requiredHours} giờ`,
       });
     }
 
@@ -411,7 +413,7 @@ const createBooking = async (req, res, next) => {
     if (hours < 7 || hours >= 17) {
       return res.status(400).json({
         success: false,
-        message: 'Service hours are 7AM to 5PM only',
+        message: 'Giờ làm việc chỉ từ 07:00 đến 17:00',
       });
     }
 
@@ -483,7 +485,7 @@ const createBooking = async (req, res, next) => {
 
     res.status(201).json({
       success: true,
-      message: 'Booking created successfully',
+      message: 'Tạo lịch hẹn thành công',
       data: booking,
     });
   } catch (error) {
@@ -506,7 +508,7 @@ const checkInBooking = async (req, res, next) => {
     if (!booking) {
       return res.status(404).json({
         success: false,
-        message: 'Booking not found'
+        message: 'Không tìm thấy lịch hẹn'
       });
     }
 
@@ -514,7 +516,7 @@ const checkInBooking = async (req, res, next) => {
     if (booking.caregiver.toString() !== req.user._id.toString()) {
       return res.status(403).json({
         success: false,
-        message: 'Not authorized to check-in this booking'
+        message: 'Bạn không có quyền check-in lịch hẹn này'
       });
     }
 
@@ -522,7 +524,7 @@ const checkInBooking = async (req, res, next) => {
     if (booking.status !== 'confirmed') {
       return res.status(400).json({
         success: false,
-        message: 'Booking must be confirmed before check-in'
+        message: 'Lịch hẹn phải được xác nhận trước khi check-in'
       });
     }
 
@@ -530,7 +532,7 @@ const checkInBooking = async (req, res, next) => {
     if (booking.checkIn.checkInTime) {
       return res.status(400).json({
         success: false,
-        message: 'Booking already checked in'
+        message: 'Lịch hẹn đã được check-in trước đó'
       });
     }
 
@@ -538,7 +540,7 @@ const checkInBooking = async (req, res, next) => {
     if (!req.file) {
       return res.status(400).json({
         success: false,
-        message: 'Verification image is required'
+        message: 'Bắt buộc tải lên ảnh xác nhận'
       });
     }
 
@@ -584,7 +586,7 @@ const getCheckInInfo = async (req, res, next) => {
     if (!booking) {
       return res.status(404).json({
         success: false,
-        message: 'Booking not found'
+        message: 'Không tìm thấy lịch hẹn'
       });
     }
 
@@ -596,7 +598,7 @@ const getCheckInInfo = async (req, res, next) => {
     ) {
       return res.status(403).json({
         success: false,
-        message: 'Not authorized'
+        message: 'Bạn không có quyền thực hiện thao tác này'
       });
     }
 

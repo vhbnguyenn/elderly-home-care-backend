@@ -6,8 +6,32 @@ const { ROLES } = require('../constants');
 // @access  Private (Careseeker only)
 const createElderlyProfile = async (req, res, next) => {
   try {
+    const { fullName, age, gender, address } = req.body;
+
+    // Basic validation for SIT-friendly messages
+    if (!fullName || !String(fullName).trim()) {
+      return res.status(400).json({ success: false, message: 'Họ tên là bắt buộc' });
+    }
+
+    if (age === undefined || age === null || age === '') {
+      return res.status(400).json({ success: false, message: 'Tuổi là bắt buộc' });
+    }
+    const parsedAge = Number(age);
+    if (Number.isNaN(parsedAge) || parsedAge < 0) {
+      return res.status(400).json({ success: false, message: 'Tuổi không hợp lệ' });
+    }
+
+    if (!gender || !['Nam', 'Nữ'].includes(gender)) {
+      return res.status(400).json({ success: false, message: 'Giới tính không hợp lệ' });
+    }
+
+    if (!address || !String(address).trim()) {
+      return res.status(400).json({ success: false, message: 'Địa chỉ là bắt buộc' });
+    }
+
     const profileData = {
       ...req.body,
+      age: parsedAge,
       careseeker: req.user._id
     };
 
@@ -15,7 +39,7 @@ const createElderlyProfile = async (req, res, next) => {
 
     res.status(201).json({
       success: true,
-      message: 'Elderly profile created successfully',
+      message: 'Tạo hồ sơ người già thành công',
       data: profile
     });
 
@@ -53,7 +77,7 @@ const getElderlyProfileById = async (req, res, next) => {
     if (!profile) {
       return res.status(404).json({
         success: false,
-        message: 'Elderly profile not found'
+        message: 'Không tìm thấy hồ sơ người già'
       });
     }
 
@@ -72,13 +96,13 @@ const getElderlyProfileById = async (req, res, next) => {
       if (!hasBooking) {
         return res.status(403).json({
           success: false,
-          message: 'Not authorized to view this profile'
+          message: 'Bạn không có quyền xem hồ sơ này'
         });
       }
     } else if (!isCareseeker && !isAdmin) {
       return res.status(403).json({
         success: false,
-        message: 'Not authorized to view this profile'
+        message: 'Bạn không có quyền xem hồ sơ này'
       });
     }
 
@@ -102,7 +126,7 @@ const updateElderlyProfile = async (req, res, next) => {
     if (!profile) {
       return res.status(404).json({
         success: false,
-        message: 'Elderly profile not found'
+        message: 'Không tìm thấy hồ sơ người già'
       });
     }
 
@@ -110,7 +134,7 @@ const updateElderlyProfile = async (req, res, next) => {
     if (profile.careseeker.toString() !== req.user._id.toString()) {
       return res.status(403).json({
         success: false,
-        message: 'Not authorized to update this profile'
+        message: 'Bạn không có quyền cập nhật hồ sơ này'
       });
     }
 
@@ -122,7 +146,7 @@ const updateElderlyProfile = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: 'Profile updated successfully',
+      message: 'Cập nhật hồ sơ người già thành công',
       data: profile
     });
 
@@ -141,7 +165,7 @@ const deleteElderlyProfile = async (req, res, next) => {
     if (!profile) {
       return res.status(404).json({
         success: false,
-        message: 'Elderly profile not found'
+        message: 'Không tìm thấy hồ sơ người già'
       });
     }
 
@@ -149,7 +173,7 @@ const deleteElderlyProfile = async (req, res, next) => {
     if (profile.careseeker.toString() !== req.user._id.toString()) {
       return res.status(403).json({
         success: false,
-        message: 'Not authorized to delete this profile'
+        message: 'Bạn không có quyền xóa hồ sơ này'
       });
     }
 
@@ -157,7 +181,7 @@ const deleteElderlyProfile = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: 'Profile deleted successfully'
+      message: 'Xóa hồ sơ người già thành công'
     });
 
   } catch (error) {

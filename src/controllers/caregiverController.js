@@ -13,7 +13,7 @@ const createProfile = async (req, res, next) => {
     if (existingProfile) {
       return res.status(400).json({
         success: false,
-        message: 'Profile already exists'
+        message: 'Hồ sơ đã tồn tại'
       });
     }
 
@@ -25,7 +25,7 @@ const createProfile = async (req, res, next) => {
       } catch (e) {
         return res.status(400).json({
           success: false,
-          message: 'Invalid certificates format. Must be valid JSON array'
+          message: 'Định dạng chứng chỉ không hợp lệ. Phải là mảng JSON hợp lệ'
         });
       }
     }
@@ -43,7 +43,7 @@ const createProfile = async (req, res, next) => {
     if (!req.files) {
       return res.status(400).json({
         success: false,
-        message: 'Required images are missing'
+        message: 'Thiếu hình ảnh bắt buộc'
       });
     }
 
@@ -53,7 +53,7 @@ const createProfile = async (req, res, next) => {
     if (!idCardFrontImage || !idCardBackImage || !profileImage) {
       return res.status(400).json({
         success: false,
-        message: 'ID card images (front & back) and profile image are required'
+        message: 'Bắt buộc có ảnh CCCD/CMND (mặt trước & mặt sau) và ảnh đại diện'
       });
     }
 
@@ -61,7 +61,7 @@ const createProfile = async (req, res, next) => {
     if ((value.education === 'đại học' || value.education === 'sau đại học') && !universityDegreeImage) {
       return res.status(400).json({
         success: false,
-        message: 'University degree image is required for university education level'
+        message: 'Bắt buộc có ảnh bằng đại học đối với trình độ đại học hoặc sau đại học'
       });
     }
 
@@ -69,7 +69,7 @@ const createProfile = async (req, res, next) => {
     if (!certificateImages || certificateImages.length !== value.certificates.length) {
       return res.status(400).json({
         success: false,
-        message: 'Each certificate must have an image'
+        message: 'Mỗi chứng chỉ phải có một ảnh'
       });
     }
 
@@ -78,7 +78,7 @@ const createProfile = async (req, res, next) => {
     if (existingIdCard) {
       return res.status(400).json({
         success: false,
-        message: 'ID card number already exists'
+        message: 'Số CCCD/CMND đã tồn tại'
       });
     }
 
@@ -118,7 +118,7 @@ const createProfile = async (req, res, next) => {
 
     res.status(201).json({
       success: true,
-      message: 'Profile created successfully',
+      message: 'Tạo hồ sơ thành công',
       data: profile
     });
 
@@ -138,7 +138,7 @@ const getMyProfile = async (req, res, next) => {
     if (!profile) {
       return res.status(404).json({
         success: false,
-        message: 'Profile not found'
+        message: 'Không tìm thấy hồ sơ'
       });
     }
 
@@ -162,7 +162,7 @@ const updateProfile = async (req, res, next) => {
     if (!profile) {
       return res.status(404).json({
         success: false,
-        message: 'Profile not found'
+        message: 'Không tìm thấy hồ sơ'
       });
     }
 
@@ -170,7 +170,7 @@ const updateProfile = async (req, res, next) => {
     if (profile.profileStatus === 'approved') {
       return res.status(400).json({
         success: false,
-        message: 'Cannot update approved profile. Please contact admin.'
+        message: 'Không thể cập nhật hồ sơ đã được duyệt. Vui lòng liên hệ admin.'
       });
     }
 
@@ -189,7 +189,7 @@ const updateProfile = async (req, res, next) => {
     if (Object.keys(updateFields).length === 0 && !req.files?.profileImage) {
       return res.status(400).json({
         success: false,
-        message: 'No fields to update'
+        message: 'Không có dữ liệu để cập nhật'
       });
     }
 
@@ -207,7 +207,7 @@ const updateProfile = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: 'Profile updated successfully',
+      message: 'Cập nhật hồ sơ thành công',
       data: profile
     });
 
@@ -227,7 +227,7 @@ const getProfileForAdmin = async (req, res, next) => {
     if (!profile) {
       return res.status(404).json({
         success: false,
-        message: 'Profile not found'
+        message: 'Không tìm thấy hồ sơ'
       });
     }
 
@@ -284,14 +284,14 @@ const updateProfileStatus = async (req, res, next) => {
     if (!['approved', 'rejected'].includes(status)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid status. Must be approved or rejected'
+        message: 'Trạng thái không hợp lệ. Chỉ chấp nhận approved hoặc rejected'
       });
     }
 
     if (status === 'rejected' && !rejectionReason) {
       return res.status(400).json({
         success: false,
-        message: 'Rejection reason is required'
+        message: 'Cần cung cấp lý do từ chối'
       });
     }
 
@@ -300,7 +300,7 @@ const updateProfileStatus = async (req, res, next) => {
     if (!profile) {
       return res.status(404).json({
         success: false,
-        message: 'Profile not found'
+        message: 'Không tìm thấy hồ sơ'
       });
     }
 
@@ -314,7 +314,7 @@ const updateProfileStatus = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: `Profile ${status} successfully`,
+      message: `Cập nhật trạng thái hồ sơ thành công: ${status}`,
       data: profile
     });
 
@@ -360,6 +360,7 @@ const searchCaregivers = async (req, res, next) => {
 
     res.json({
       success: true,
+      message: caregivers.length > 0 ? 'Tìm kiếm caregiver thành công' : 'Không tìm thấy caregiver phù hợp',
       count: caregivers.length,
       data: caregivers,
       searchType: 'manual',
@@ -383,7 +384,7 @@ const getCaregiverDetail = async (req, res, next) => {
     if (!caregiver) {
       return res.status(404).json({
         success: false,
-        message: 'Caregiver not found',
+        message: 'Không tìm thấy caregiver',
       });
     }
 
@@ -391,7 +392,7 @@ const getCaregiverDetail = async (req, res, next) => {
     if (caregiver.profileStatus !== 'approved') {
       return res.status(403).json({
         success: false,
-        message: 'Caregiver profile is not available',
+        message: 'Hồ sơ caregiver không khả dụng',
       });
     }
 
