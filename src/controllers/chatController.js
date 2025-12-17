@@ -13,7 +13,7 @@ const createOrGetChat = async (req, res, next) => {
     if (!participantId) {
       return res.status(400).json({
         success: false,
-        message: 'Participant ID is required'
+        message: 'Thiếu người tham gia'
       });
     }
 
@@ -21,7 +21,7 @@ const createOrGetChat = async (req, res, next) => {
     if (participantId === req.user.id) {
       return res.status(400).json({
         success: false,
-        message: 'Cannot create chat with yourself'
+        message: 'Không thể tạo cuộc trò chuyện với chính bạn'
       });
     }
 
@@ -30,7 +30,7 @@ const createOrGetChat = async (req, res, next) => {
     if (!participant) {
       return res.status(404).json({
         success: false,
-        message: 'Participant not found'
+        message: 'Không tìm thấy người tham gia'
       });
     }
 
@@ -110,7 +110,7 @@ const getChatDetail = async (req, res, next) => {
     if (!chat) {
       return res.status(404).json({
         success: false,
-        message: 'Chat not found'
+        message: 'Không tìm thấy cuộc trò chuyện'
       });
     }
 
@@ -122,7 +122,7 @@ const getChatDetail = async (req, res, next) => {
     if (!isParticipant) {
       return res.status(403).json({
         success: false,
-        message: 'Not authorized to view this chat'
+        message: 'Bạn không có quyền xem cuộc trò chuyện này'
       });
     }
 
@@ -157,7 +157,7 @@ const getMessages = async (req, res, next) => {
     if (!chat) {
       return res.status(404).json({
         success: false,
-        message: 'Chat not found'
+        message: 'Không tìm thấy cuộc trò chuyện'
       });
     }
 
@@ -169,7 +169,7 @@ const getMessages = async (req, res, next) => {
     if (!isParticipant) {
       return res.status(403).json({
         success: false,
-        message: 'Not authorized to view messages'
+        message: 'Bạn không có quyền xem tin nhắn'
       });
     }
 
@@ -214,7 +214,7 @@ const sendMessage = async (req, res, next) => {
     if (!content || !content.trim()) {
       return res.status(400).json({
         success: false,
-        message: 'Message content is required'
+        message: 'Nội dung tin nhắn là bắt buộc'
       });
     }
 
@@ -223,7 +223,7 @@ const sendMessage = async (req, res, next) => {
     if (!chat) {
       return res.status(404).json({
         success: false,
-        message: 'Chat not found'
+        message: 'Không tìm thấy cuộc trò chuyện'
       });
     }
 
@@ -235,7 +235,7 @@ const sendMessage = async (req, res, next) => {
     if (!isParticipant) {
       return res.status(403).json({
         success: false,
-        message: 'Not authorized to send message'
+        message: 'Bạn không có quyền gửi tin nhắn trong cuộc trò chuyện này'
       });
     }
 
@@ -263,6 +263,7 @@ const sendMessage = async (req, res, next) => {
 
     res.status(201).json({
       success: true,
+      message: 'Gửi tin nhắn thành công',
       data: message
     });
 
@@ -283,7 +284,7 @@ const markAsRead = async (req, res, next) => {
     if (!chat) {
       return res.status(404).json({
         success: false,
-        message: 'Chat not found'
+        message: 'Không tìm thấy cuộc trò chuyện'
       });
     }
 
@@ -295,7 +296,7 @@ const markAsRead = async (req, res, next) => {
     if (!isParticipant) {
       return res.status(403).json({
         success: false,
-        message: 'Not authorized'
+        message: 'Bạn không có quyền thực hiện thao tác này'
       });
     }
 
@@ -303,7 +304,7 @@ const markAsRead = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: 'Chat marked as read'
+      message: 'Đã đánh dấu đã đọc'
     });
 
   } catch (error) {
