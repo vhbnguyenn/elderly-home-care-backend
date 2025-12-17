@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@sendinblue/client": "^3.3.1",
+    "@tensorflow/tfjs": "^4.22.0",
     "axios": "^1.13.2",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^1.41.3",
@@ -37,10 +38,12 @@
     "mongoose": "^8.20.1",
     "multer": "^2.0.2",
     "multer-storage-cloudinary": "^4.0.0",
+    "node-cache": "^5.1.2",
     "node-cron": "^4.2.1",
     "nodemailer": "^7.0.11",
     "qrcode": "^1.5.4",
     "socket.io": "^4.8.1",
+    "string-similarity": "^4.0.4",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1"
   },

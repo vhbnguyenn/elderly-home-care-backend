@@ -1,38 +1,50 @@
-const axios = require('axios');
+const nodemailer = require('nodemailer');
 
 /**
- * Send email using Brevo API
+ * Create nodemailer transporter with Gmail SMTP
  */
-const sendEmailViaBrevoAPI = async (to, subject, htmlContent) => {
+const createTransporter = () => {
+  return nodemailer.createTransport({
+    host: process.env.EMAIL_HOST,
+    port: process.env.EMAIL_PORT,
+    secure: false, // true for 465, false for other ports
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASSWORD,
+    },
+  });
+};
+
+/**
+ * Send email using Gmail SMTP
+ */
+const sendEmailViaSMTP = async (to, subject, htmlContent) => {
   try {
-    const apiKey = process.env.BREVO_API_KEY || process.env.EMAIL_PASSWORD;
+    const transporter = createTransporter();
     
-    if (!apiKey) {
-      throw new Error('Brevo API key not configured');
-    }
-
-    const response = await axios.post('https://api.brevo.com/v3/smtp/email', {
-      sender: {
+    const mailOptions = {
+      from: {
         name: 'Elderly Home Care',
-        email: process.env.EMAIL_USER
+        address: process.env.EMAIL_USER
       },
-      to: [{ email: to }],
+      to: to,
       subject: subject,
-      htmlContent: htmlContent
-    }, {
-      headers: {
-        'accept': 'application/json',
-        'api-key': apiKey,
-        'content-type': 'application/json'
-      }
-    });
+      html: htmlContent
+    };
 
-    console.log('✅ Email sent via Brevo API:', response.data.messageId);
+    const info = await transporter.sendMail(mailOptions);
+    console.log('✅ Email sent via Gmail SMTP:', info.messageId);
     return true;
   } catch (error) {
-    const errorMsg = error.response?.data?.message || error.message;
-    console.error('❌ Brevo API error:', errorMsg);
-    throw new Error(`Brevo API failed: ${errorMsg}`);
+    console.error('❌ Gmail SMTP error:', error.message);
+    
+    // Trong development mode, cho phép tiếp tục dù email fail
+    if (process.env.NODE_ENV === 'development') {
+      console.log('⚠️ [DEV MODE] Email sending failed but continuing...');
+      return true;
+    }
+    
+    throw new Error(`Gmail SMTP failed: ${error.message}`);
   }
 };
 
@@ -61,7 +73,7 @@ const sendVerificationCode = async (email, name, code) => {
       </div>
     `;
 
-    await sendEmailViaBrevoAPI(email, 'Your Verification Code', htmlContent);
+    await sendEmailViaSMTP(email, 'Your Verification Code', htmlContent);
     
     // In ra console trong dev mode để dễ debug
     if (process.env.NODE_ENV === 'development') {
@@ -103,7 +115,7 @@ const sendWelcomeEmail = async (email, name) => {
       </div>
     `;
     
-    await sendEmailViaBrevoAPI(email, 'Welcome to Elderly Home Care!', htmlContent);
+    await sendEmailViaSMTP(email, 'Welcome to Elderly Home Care!', htmlContent);
     console.log('✅ Welcome email sent');
     
   } catch (error) {
@@ -142,7 +154,7 @@ const sendResetPasswordCode = async (email, name, code) => {
       </div>
     `;
     
-    await sendEmailViaBrevoAPI(email, 'Reset Your Password', htmlContent);
+    await sendEmailViaSMTP(email, 'Reset Your Password', htmlContent);
     console.log('✅ Reset password code sent to:', email);
     return true;
     

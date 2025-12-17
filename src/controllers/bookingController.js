@@ -1,4 +1,5 @@
 const Booking = require('../models/Booking');
+const BookingNote = require('../models/BookingNote');
 const CaregiverProfile = require('../models/CaregiverProfile');
 const Package = require('../models/Package');
 const { ROLES } = require('../constants');
@@ -229,6 +230,79 @@ const updateBookingStatus = async (req, res, next) => {
     }
 
     await booking.save();
+
+    // ✅ Xử lý payment khi booking completed
+    if (status === 'completed' && booking.payment.status === 'paid' && !booking.payment.transferredToCaregiver) {
+      const Wallet = require('../models/Wallet');
+      const PLATFORM_FEE_PERCENTAGE = 15;
+      
+      try {
+        // Kiểm tra đã qua 24h từ lúc thanh toán chưa
+        const now = new Date();
+        const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        const hasPassed24Hours = booking.payment.paidAt && 
+          new Date(booking.payment.paidAt) <= twentyFourHoursAgo;
+        
+        // Tìm hoặc tạo wallet
+        let wallet = await Wallet.findOne({ caregiver: booking.caregiver });
+        if (!wallet) {
+          wallet = new Wallet({ caregiver: booking.caregiver });
+        }
+        
+        if (hasPassed24Hours) {
+          // ✅ Đã qua 24h → Cộng vào availableBalance (trừ 15% phí) và totalEarnings
+          const grossAmount = booking.totalPrice;
+          const platformFee = Math.round(grossAmount * (PLATFORM_FEE_PERCENTAGE / 100));
+          const netAmount = grossAmount - platformFee;
+
+          // Thêm giao dịch thu nhập
+          wallet.transactions.push({
+            booking: booking._id,
+            type: 'earning',
+            amount: grossAmount,
+            description: `Thu nhập từ booking ${booking._id}`,
+            status: 'completed',
+            processedAt: new Date()
+          });
+
+          // Thêm giao dịch phí nền tảng
+          wallet.transactions.push({
+            booking: booking._id,
+            type: 'platform_fee',
+            amount: -platformFee,
+            description: `Phí nền tảng ${PLATFORM_FEE_PERCENTAGE}%`,
+            status: 'completed',
+            processedAt: new Date()
+          });
+
+          // Cập nhật số dư
+          wallet.availableBalance += netAmount;
+          wallet.totalEarnings += grossAmount;
+          wallet.totalPlatformFees += platformFee;
+          wallet.pendingAmount = Math.max(0, wallet.pendingAmount - grossAmount);
+          wallet.lastUpdated = new Date();
+
+          await wallet.save();
+
+          // Đánh dấu booking đã chuyển tiền
+          booking.payment.transferredToCaregiver = true;
+          booking.payment.transferredAt = new Date();
+          await booking.save();
+
+          console.log(`✅ Processed payment for booking ${booking._id}: ${netAmount}đ to caregiver (đã qua 24h)`);
+        } else {
+          // ✅ Chưa qua 24h → Thêm vào pendingAmount (chờ xử lý)
+          wallet.pendingAmount += booking.totalPrice;
+          wallet.lastUpdated = new Date();
+          await wallet.save();
+          
+          console.log(`⏳ Added pending amount for booking ${booking._id}: ${booking.totalPrice}đ (chờ 24h)`);
+        }
+      } catch (error) {
+        console.error('❌ Error processing payment for completed booking:', error);
+        // Không throw error để không ảnh hưởng response
+      }
+    }
 
     await booking.populate([
       { path: 'careseeker', select: 'name email phone' },
@@ -602,6 +676,11 @@ const getCheckInInfo = async (req, res, next) => {
       });
     }
 
+    // Chỉ coi là đã check-in khi status là in-progress hoặc completed
+    // Và có checkInTime (để tránh trường hợp status đã update nhưng chưa có checkInTime)
+    const hasCheckedIn = (booking.status === 'in-progress' || booking.status === 'completed') 
+      && !!booking.checkIn.checkInTime;
+
     res.status(200).json({
       success: true,
       data: {
@@ -613,7 +692,7 @@ const getCheckInInfo = async (req, res, next) => {
         totalPrice: booking.totalPrice,
         caregiver: booking.caregiver,
         checkIn: {
-          hasCheckedIn: !!booking.checkIn.checkInTime,
+          hasCheckedIn: hasCheckedIn,
           verificationImage: booking.checkIn.verificationImage || null,
           checkInTime: booking.checkIn.checkInTime || null,
           actualStartTime: booking.checkIn.actualStartTime || null
@@ -621,6 +700,129 @@ const getCheckInInfo = async (req, res, next) => {
       }
     });
 
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Create a new note for booking (Caregiver only)
+// @route   POST /api/bookings/:id/notes
+// @access  Private (Caregiver only - owner)
+const createBookingNote = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { content } = req.body;
+
+    if (!content || content.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        message: 'Vui lòng nhập nội dung ghi chú'
+      });
+    }
+
+    const booking = await Booking.findById(id);
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy booking'
+      });
+    }
+
+    // Check if user is the caregiver of this booking
+    let caregiverId;
+    if (booking.caregiver && booking.caregiver._id) {
+      // Populated
+      caregiverId = booking.caregiver._id.toString();
+    } else {
+      // ObjectId
+      caregiverId = booking.caregiver.toString();
+    }
+    const userId = req.user._id.toString();
+
+    if (caregiverId !== userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Bạn không có quyền tạo ghi chú cho booking này'
+      });
+    }
+
+    // Create note
+    const note = await BookingNote.create({
+      booking: id,
+      caregiver: userId,
+      content: content.trim()
+    });
+
+    await note.populate('caregiver', 'name avatar');
+
+    res.status(201).json({
+      success: true,
+      message: 'Tạo ghi chú thành công',
+      data: note
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get all notes for a booking
+// @route   GET /api/bookings/:id/notes
+// @access  Private (Caregiver owner & Careseeker can view)
+const getBookingNotes = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const booking = await Booking.findById(id);
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy booking'
+      });
+    }
+
+    // Check permission
+    let caregiverId;
+    if (booking.caregiver && booking.caregiver._id) {
+      caregiverId = booking.caregiver._id.toString();
+    } else {
+      caregiverId = booking.caregiver.toString();
+    }
+
+    let careseekerId;
+    if (booking.careseeker && booking.careseeker._id) {
+      careseekerId = booking.careseeker._id.toString();
+    } else {
+      careseekerId = booking.careseeker.toString();
+    }
+
+    const userId = req.user._id.toString();
+    const isAdmin = req.user.role === ROLES.ADMIN;
+
+    const isCaregiver = caregiverId === userId;
+    const isCareseeker = careseekerId === userId;
+
+    if (!isCaregiver && !isCareseeker && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Bạn không có quyền xem ghi chú của booking này'
+      });
+    }
+
+    // Get all notes for this booking
+    const notes = await BookingNote.find({ booking: id })
+      .populate('caregiver', 'name avatar')
+      .sort('-createdAt');
+
+    res.json({
+      success: true,
+      data: {
+        bookingId: id,
+        notes,
+        total: notes.length
+      }
+    });
   } catch (error) {
     next(error);
   }
@@ -635,5 +837,7 @@ module.exports = {
   updateTaskStatus,
   createBooking,
   checkInBooking,
-  getCheckInInfo
+  getCheckInInfo,
+  createBookingNote,
+  getBookingNotes
 };

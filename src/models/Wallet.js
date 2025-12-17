@@ -4,11 +4,11 @@ const transactionSchema = new mongoose.Schema({
   booking: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Booking',
-    required: true
+    required: false // Optional vì deposit/withdrawal không có booking
   },
   type: {
     type: String,
-    enum: ['earning', 'platform_fee', 'refund'],
+    enum: ['earning', 'platform_fee', 'refund', 'deposit', 'withdrawal'],
     required: true
   },
   amount: {
@@ -21,11 +21,20 @@ const transactionSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'completed', 'failed'],
+    enum: ['pending', 'processing', 'completed', 'failed'],
     default: 'pending'
   },
   processedAt: {
     type: Date
+  },
+  // PayOS tracking
+  payosOrderCode: {
+    type: String,
+    trim: true
+  },
+  payosTransactionId: {
+    type: String,
+    trim: true
   }
 }, {
   timestamps: true
