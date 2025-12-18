@@ -20,14 +20,6 @@ const createPackage = async (req, res, next) => {
       isPopular
     } = req.body;
 
-    // Validate required fields
-    if (!packageName || !description || !price || !packageType || !duration || !paymentCycle) {
-      return res.status(400).json({
-        success: false,
-        message: 'All required fields must be provided',
-      });
-    }
-
     // Create package (không cần caregiver vì là gói chung của hệ thống)
     const packageData = await Package.create({
       packageName,
