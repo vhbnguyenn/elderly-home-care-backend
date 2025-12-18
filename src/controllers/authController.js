@@ -1,5 +1,5 @@
 const User = require('../models/User');
-const { registerSchema, loginSchema, resetPasswordSchema, changePasswordSchema, createUserByAdminSchema } = require('../utils/validation');
+const { changePasswordSchema, createUserByAdminSchema } = require('../utils/validation');
 const { verifyRefreshToken } = require('../utils/tokenHelper');
 const { sendVerificationCode, sendWelcomeEmail, sendResetPasswordCode } = require('../utils/sendEmail');
 
@@ -10,21 +10,7 @@ const { sendVerificationCode, sendWelcomeEmail, sendResetPasswordCode } = requir
  */
 const register = async (req, res, next) => {
   try {
-    // Validate input
-    const { error, value } = registerSchema.validate(req.body, { 
-      abortEarly: false 
-    });
-
-    if (error) {
-      const errors = error.details.map(detail => detail.message);
-      return res.status(400).json({
-        success: false,
-        message: 'Dữ liệu không hợp lệ',
-        errors
-      });
-    }
-
-    const { name, email, password, role, phone } = value;
+    const { name, email, password, role, phone } = req.body;
 
     // Trim và lowercase email
     const normalizedEmail = email.trim().toLowerCase();
@@ -91,17 +77,7 @@ const register = async (req, res, next) => {
  */
 const login = async (req, res, next) => {
   try {
-    // Validate input
-    const { error, value } = loginSchema.validate(req.body);
-
-    if (error) {
-      return res.status(400).json({
-        success: false,
-        message: error.details[0].message
-      });
-    }
-
-    const { email, password } = value;
+    const { email, password } = req.body;
 
     // Trim và lowercase email
     const normalizedEmail = email.trim().toLowerCase();
@@ -255,13 +231,6 @@ const refreshToken = async (req, res, next) => {
   try {
     const { refreshToken } = req.body;
 
-    if (!refreshToken) {
-      return res.status(400).json({
-        success: false,
-        message: 'Thiếu refresh token'
-      });
-    }
-
     // Verify refresh token
     let decoded;
     try {
@@ -346,13 +315,6 @@ const logout = async (req, res, next) => {
 const verifyCode = async (req, res, next) => {
   try {
     const { email, code } = req.body;
-
-    if (!email || !code) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email và mã xác minh là bắt buộc'
-      });
-    }
 
     // Trim và lowercase email
     const normalizedEmail = email.trim().toLowerCase();
@@ -447,13 +409,6 @@ const resendVerification = async (req, res, next) => {
   try {
     const { email } = req.body;
 
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email là bắt buộc'
-      });
-    }
-
     // Trim và lowercase email
     const normalizedEmail = email.trim().toLowerCase();
     const user = await User.findOne({ email: normalizedEmail });
@@ -513,13 +468,6 @@ const forgotPassword = async (req, res, next) => {
   try {
     const { email } = req.body;
 
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email là bắt buộc'
-      });
-    }
-
     const user = await User.findOne({ email });
 
     if (!user) {
@@ -562,19 +510,7 @@ const forgotPassword = async (req, res, next) => {
  */
 const resetPassword = async (req, res, next) => {
   try {
-    // Validate input
-    const { error, value } = resetPasswordSchema.validate(req.body);
-
-    if (error) {
-      const errors = error.details.map(detail => detail.message);
-      return res.status(400).json({
-        success: false,
-        message: 'Dữ liệu không hợp lệ',
-        errors
-      });
-    }
-
-    const { email, code, newPassword, verifyOnly } = value;
+    const { email, code, newPassword, verifyOnly } = req.body;
 
     // Tìm user với email và code
     const user = await User.findOne({
@@ -942,6 +878,82 @@ const getUserById = async (req, res, next) => {
   }
 };
 
+/**
+ * @desc    Update user by ID (Admin only)
+ * @route   PUT /api/profiles/users/:userId
+ * @access  Private (Admin only)
+ */
+const updateUserByAdmin = async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    const { name, email, phone, role, isActive, isEmailVerified } = req.body;
+
+    // Tìm user cần update
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy người dùng'
+      });
+    }
+
+    // Không cho phép admin tự thay đổi role của chính mình
+    if (userId === req.user.id && role && role !== user.role) {
+      return res.status(403).json({
+        success: false,
+        message: 'Không thể thay đổi role của chính mình'
+      });
+    }
+
+    // Kiểm tra email mới nếu có thay đổi
+    if (email && email !== user.email) {
+      const normalizedEmail = email.trim().toLowerCase();
+      const existingUser = await User.findOne({ email: normalizedEmail });
+      
+      if (existingUser && existingUser._id.toString() !== userId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email đã được sử dụng bởi tài khoản khác'
+        });
+      }
+      
+      user.email = normalizedEmail;
+    }
+
+    // Cập nhật các field được cung cấp
+    if (name !== undefined) user.name = name;
+    if (phone !== undefined) user.phone = phone;
+    if (role !== undefined) user.role = role;
+    if (isActive !== undefined) user.isActive = isActive;
+    if (isEmailVerified !== undefined) user.isEmailVerified = isEmailVerified;
+
+    await user.save();
+
+    // Trả về user đã update (không bao gồm sensitive data)
+    const userResponse = {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      phone: user.phone,
+      isActive: user.isActive,
+      isEmailVerified: user.isEmailVerified,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt
+    };
+
+    res.status(200).json({
+      success: true,
+      message: 'Cập nhật thông tin người dùng thành công',
+      data: userResponse
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -952,6 +964,7 @@ module.exports = {
   getAllUsers,
   getUserById,
   createUserByAdmin,
+  updateUserByAdmin,
   deactivateOwnAccount,
   refreshToken,
   logout,

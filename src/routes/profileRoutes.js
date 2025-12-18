@@ -12,6 +12,7 @@ const {
   getUserById,
   toggleUserStatus,
   createUserByAdmin,
+  updateUserByAdmin,
   deactivateOwnAccount,
 } = require('../controllers/authController');
 
@@ -266,6 +267,73 @@ router.route('/users')
  *         description: Admin access required
  */
 router.get('/users/:userId', protect, authorize(ROLES.ADMIN), getUserById);
+
+/**
+ * @swagger
+ * /api/profiles/users/{userId}:
+ *   put:
+ *     summary: Update user information (Admin only)
+ *     tags: [Profiles]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID to update
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: John Doe
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: john@example.com
+ *               phone:
+ *                 type: string
+ *                 example: "0901234567"
+ *               role:
+ *                 type: string
+ *                 enum: [caregiver, careseeker, admin]
+ *                 example: careseeker
+ *               isActive:
+ *                 type: boolean
+ *                 example: true
+ *               isEmailVerified:
+ *                 type: boolean
+ *                 example: true
+ *     responses:
+ *       200:
+ *         description: User updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Cập nhật thông tin người dùng thành công
+ *                 data:
+ *                   $ref: '#/components/schemas/UserResponse'
+ *       400:
+ *         description: Email already exists
+ *       403:
+ *         description: Cannot change own role
+ *       404:
+ *         description: User not found
+ */
+router.put('/users/:userId', protect, authorize(ROLES.ADMIN), updateUserByAdmin);
 
 /**
  * @swagger
