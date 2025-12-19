@@ -102,7 +102,7 @@ const caregiverProfileSchema = new mongoose.Schema(
     
     // Hồ sơ bổ sung
     profileImage: {
-      type: String, // URL
+      type: String, // URL - Avatar của caregiver
       required: [true, 'Profile image is required']
     },
     bio: {
@@ -170,12 +170,6 @@ const caregiverProfileSchema = new mongoose.Schema(
   }
 );
 
-// Validate universityDegreeImage required nếu education là đại học hoặc sau đại học
-caregiverProfileSchema.pre('save', function(next) {
-  if ((this.education === 'đại học' || this.education === 'sau đại học') && !this.universityDegreeImage) {
-    next(new Error('University degree image is required for university education level'));
-  }
-  next();
-});
+// Bỏ validation pre-save hook
 
 module.exports = mongoose.model('CaregiverProfile', caregiverProfileSchema);

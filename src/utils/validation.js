@@ -191,8 +191,16 @@ const certificateSchema = Joi.object({
     .messages({
       'any.only': 'Loại chứng chỉ không hợp lệ',
       'string.empty': 'Loại chứng chỉ là bắt buộc'
+    }),
+  
+  certificateImage: Joi.string()
+    .trim()
+    .optional()
+    .allow(null, '')
+    .messages({
+      'string.base': 'URL ảnh chứng chỉ không hợp lệ'
     })
-});
+}).unknown(true); // Cho phép các field khác
 
 // Validation schema cho tạo caregiver profile
 const createCaregiverProfileSchema = Joi.object({

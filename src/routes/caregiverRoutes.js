@@ -12,7 +12,7 @@ const {
   getCaregiversList,
 } = require('../controllers/caregiverController');
 const { protect, authorize } = require('../middlewares/auth');
-const { uploadCaregiverProfile } = require('../middlewares/upload');
+const { uploadCaregiverProfileOptional } = require('../middlewares/upload');
 const { ROLES } = require('../constants');
 
 /**
@@ -108,7 +108,7 @@ const { ROLES } = require('../constants');
 
 /**
  * @swagger
- * /api/caregiver/profile:
+ * /api/caregivers/profile:
  *   post:
  *     summary: Tạo hồ sơ caregiver
  *     tags: [Caregiver]
@@ -117,26 +117,86 @@ const { ROLES } = require('../constants');
  *     requestBody:
  *       required: true
  *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               phoneNumber:
+ *                 type: string
+ *                 example: "0123456789"
+ *               dateOfBirth:
+ *                 type: string
+ *                 format: date
+ *                 example: "1990-01-01"
+ *               gender:
+ *                 type: string
+ *                 enum: [Nam, Nữ]
+ *                 example: "Nam"
+ *               permanentAddress:
+ *                 type: string
+ *                 example: "123 Nguyễn Huệ, Q1, TPHCM"
+ *               temporaryAddress:
+ *                 type: string
+ *                 example: "456 Lê Lợi, Q1, TPHCM"
+ *               idCardNumber:
+ *                 type: string
+ *                 example: "123456789012"
+ *               idCardFrontImage:
+ *                 type: string
+ *                 description: "URL ảnh CCCD/CMND mặt trước (nếu đã upload trước)"
+ *               idCardBackImage:
+ *                 type: string
+ *                 description: "URL ảnh CCCD/CMND mặt sau (nếu đã upload trước)"
+ *               universityDegreeImage:
+ *                 type: string
+ *                 description: "URL ảnh bằng đại học (nếu đã upload trước)"
+ *               profileImage:
+ *                 type: string
+ *                 description: "URL avatar/ảnh đại diện (nếu đã upload trước)"
+ *               yearsOfExperience:
+ *                 type: number
+ *                 example: 5
+ *               workHistory:
+ *                 type: string
+ *                 example: "Đã làm việc tại bệnh viện X, Y"
+ *               education:
+ *                 type: string
+ *                 enum: [trung học cơ sở, trung học phổ thông, đại học, sau đại học]
+ *                 example: "đại học"
+ *               bio:
+ *                 type: string
+ *                 example: "Tôi là người có kinh nghiệm chăm sóc người già"
+ *               agreeToEthics:
+ *                 type: boolean
+ *                 example: true
+ *               agreeToTerms:
+ *                 type: boolean
+ *                 example: true
+ *               certificates:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     name:
+ *                       type: string
+ *                       example: "Chứng chỉ chăm sóc người già"
+ *                     issueDate:
+ *                       type: string
+ *                       format: date
+ *                       example: "2020-01-01"
+ *                     issuingOrganization:
+ *                       type: string
+ *                       example: "Bộ Y tế"
+ *                     certificateType:
+ *                       type: string
+ *                       enum: [chăm sóc người già, y tá, điều dưỡng, sơ cứu, dinh dưỡng, vật lí trị liệu, khác]
+ *                       example: "chăm sóc người già"
+ *                     certificateImage:
+ *                       type: string
+ *                       description: "URL ảnh chứng chỉ (nếu đã upload trước)"
  *         multipart/form-data:
  *           schema:
  *             type: object
- *             required:
- *               - phoneNumber
- *               - dateOfBirth
- *               - gender
- *               - permanentAddress
- *               - idCardNumber
- *               - idCardFrontImage
- *               - idCardBackImage
- *               - profileImage
- *               - yearsOfExperience
- *               - workHistory
- *               - education
- *               - bio
- *               - agreeToEthics
- *               - agreeToTerms
- *               - certificates
- *               - certificateImages
  *             properties:
  *               phoneNumber:
  *                 type: string
@@ -165,6 +225,7 @@ const { ROLES } = require('../constants');
  *               profileImage:
  *                 type: string
  *                 format: binary
+ *                 description: "Ảnh avatar/ảnh đại diện"
  *               yearsOfExperience:
  *                 type: number
  *               workHistory:
@@ -195,11 +256,11 @@ const { ROLES } = require('../constants');
  *       401:
  *         description: Unauthorized
  */
-router.post('/profile', protect, authorize(ROLES.CAREGIVER), uploadCaregiverProfile, createProfile);
+router.post('/profile', protect, authorize(ROLES.CAREGIVER), uploadCaregiverProfileOptional, createProfile);
 
 /**
  * @swagger
- * /api/caregiver/profile:
+ * /api/caregivers/profile:
  *   get:
  *     summary: Lấy profile của caregiver hiện tại
  *     tags: [Caregiver]
@@ -217,7 +278,7 @@ router.get('/profile', protect, authorize(ROLES.CAREGIVER), getMyProfile);
 
 /**
  * @swagger
- * /api/caregiver/profile:
+ * /api/caregivers/profile:
  *   put:
  *     summary: Cập nhật profile của caregiver (chỉ các field được phép)
  *     tags: [Caregiver]
@@ -226,6 +287,41 @@ router.get('/profile', protect, authorize(ROLES.CAREGIVER), getMyProfile);
  *     requestBody:
  *       required: false
  *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               phoneNumber:
+ *                 type: string
+ *                 example: "0123456789"
+ *               temporaryAddress:
+ *                 type: string
+ *                 example: "456 Lê Lợi, Q1, TPHCM"
+ *               yearsOfExperience:
+ *                 type: number
+ *                 example: 5
+ *               workHistory:
+ *                 type: string
+ *                 example: "Đã làm việc tại bệnh viện X, Y"
+ *               education:
+ *                 type: string
+ *                 enum: [trung học cơ sở, trung học phổ thông, đại học, sau đại học]
+ *                 example: "đại học"
+ *               bio:
+ *                 type: string
+ *                 example: "Tôi là người có kinh nghiệm chăm sóc người già"
+ *               profileImage:
+ *                 type: string
+ *                 description: "URL avatar/ảnh đại diện (nếu đã upload trước)"
+ *               idCardFrontImage:
+ *                 type: string
+ *                 description: "URL ảnh CCCD/CMND mặt trước (nếu đã upload trước)"
+ *               idCardBackImage:
+ *                 type: string
+ *                 description: "URL ảnh CCCD/CMND mặt sau (nếu đã upload trước)"
+ *               universityDegreeImage:
+ *                 type: string
+ *                 description: "URL ảnh bằng đại học (nếu đã upload trước)"
  *         multipart/form-data:
  *           schema:
  *             type: object
@@ -252,7 +348,19 @@ router.get('/profile', protect, authorize(ROLES.CAREGIVER), getMyProfile);
  *               profileImage:
  *                 type: string
  *                 format: binary
- *                 description: Ảnh đại diện
+ *                 description: "Ảnh avatar/ảnh đại diện"
+ *               idCardFrontImage:
+ *                 type: string
+ *                 format: binary
+ *                 description: Ảnh CCCD/CMND mặt trước
+ *               idCardBackImage:
+ *                 type: string
+ *                 format: binary
+ *                 description: Ảnh CCCD/CMND mặt sau
+ *               universityDegreeImage:
+ *                 type: string
+ *                 format: binary
+ *                 description: Ảnh bằng đại học
  *     responses:
  *       200:
  *         description: Profile updated successfully
@@ -263,11 +371,11 @@ router.get('/profile', protect, authorize(ROLES.CAREGIVER), getMyProfile);
  *       401:
  *         description: Unauthorized
  */
-router.put('/profile', protect, authorize(ROLES.CAREGIVER), uploadCaregiverProfile, updateProfile);
+router.put('/profile', protect, authorize(ROLES.CAREGIVER), uploadCaregiverProfileOptional, updateProfile);
 
 /**
  * @swagger
- * /api/caregiver/profiles:
+ * /api/caregivers/profiles:
  *   get:
  *     summary: Lấy tất cả profiles (Admin only)
  *     tags: [Caregiver]
@@ -302,7 +410,7 @@ router.get('/profiles', protect, authorize(ROLES.ADMIN), getAllProfiles);
 
 /**
  * @swagger
- * /api/caregiver/profile/{id}/admin:
+ * /api/caregivers/profile/{id}/admin:
  *   get:
  *     summary: Lấy chi tiết profile caregiver để duyệt (Admin only)
  *     tags: [Caregiver]
@@ -336,7 +444,7 @@ router.get('/profile/:id/admin', protect, authorize(ROLES.ADMIN), getProfileForA
 
 /**
  * @swagger
- * /api/caregiver/profile/{id}/status:
+ * /api/caregivers/profile/{id}/status:
  *   put:
  *     summary: Approve/Reject profile (Admin only)
  *     tags: [Caregiver]
