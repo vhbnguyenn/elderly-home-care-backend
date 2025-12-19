@@ -6,10 +6,10 @@ const {
   getElderlyProfileById,
   updateElderlyProfile,
   deleteElderlyProfile,
-  getCareseekerProfiles,
 } = require('../controllers/elderlyController');
 const { protect, authorize } = require('../middlewares/auth');
 const { ROLES } = require('../constants');
+const { uploadElderlyAvatarOptional } = require('../middlewares/upload');
 
 /**
  * @swagger
@@ -132,11 +132,128 @@ const { ROLES } = require('../constants');
  *               specialNotes:
  *                 type: string
  *                 example: "Cần hỗ trợ di chuyển lên xuống cầu thang"
+ *               avatar:
+ *                 type: string
+ *                 description: "URL ảnh đại diện (nếu đã upload trước)"
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - fullName
+ *               - age
+ *               - gender
+ *               - address
+ *             properties:
+ *               fullName:
+ *                 type: string
+ *                 example: "Nguyễn Văn A"
+ *               age:
+ *                 type: number
+ *                 example: 75
+ *               gender:
+ *                 type: string
+ *                 enum: [Nam, Nữ]
+ *                 example: "Nam"
+ *               address:
+ *                 type: string
+ *                 example: "123 Nguyễn Huệ, Q1, TPHCM"
+ *               phone:
+ *                 type: string
+ *                 example: "0123456789"
+ *               bloodType:
+ *                 type: string
+ *                 enum: [A, B, AB, O, Không rõ]
+ *                 example: "A"
+ *               medicalConditions:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ["Tiểu đường", "Cao huyết áp"]
+ *               medications:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     name:
+ *                       type: string
+ *                       example: "Metformin"
+ *                     dosage:
+ *                       type: string
+ *                       example: "500mg"
+ *                     frequency:
+ *                       type: string
+ *                       example: "2 lần/ngày"
+ *                     allergies:
+ *                       type: string
+ *                       example: "Không"
+ *               allergies:
+ *                 type: string
+ *                 example: "Dị ứng hải sản"
+ *               selfCareActivities:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     activity:
+ *                       type: string
+ *                       enum: [Ăn uống, Tắm rửa, Di chuyển, Mặc đồ]
+ *                       example: "Ăn uống"
+ *                     needHelp:
+ *                       type: boolean
+ *                       example: false
+ *               livingEnvironment:
+ *                 type: object
+ *                 properties:
+ *                   type:
+ *                     type: string
+ *                     enum: [Căn hộ chung cư, Nhà riêng, Viện dưỡng lão, Khác]
+ *                     example: "Nhà riêng"
+ *                   hasFamily:
+ *                     type: boolean
+ *                     example: true
+ *                   familyNote:
+ *                     type: string
+ *                     example: "Sống cùng con trai"
+ *               preferences:
+ *                 type: object
+ *                 properties:
+ *                   hobbies:
+ *                     type: array
+ *                     items:
+ *                       type: string
+ *                     example: ["Đọc sách", "Nghe nhạc"]
+ *                   favoriteFoods:
+ *                     type: array
+ *                     items:
+ *                       type: string
+ *                     example: ["Cháo", "Phở"]
+ *                   dietaryRestrictions:
+ *                     type: string
+ *                     example: "Ăn ít muối, ít đường"
+ *               emergencyContact:
+ *                 type: object
+ *                 properties:
+ *                   name:
+ *                     type: string
+ *                     example: "Nguyễn Văn B"
+ *                   relationship:
+ *                     type: string
+ *                     example: "Con trai"
+ *                   phone:
+ *                     type: string
+ *                     example: "0987654321"
+ *               specialNotes:
+ *                 type: string
+ *                 example: "Cần hỗ trợ di chuyển lên xuống cầu thang"
+ *               avatar:
+ *                 type: string
+ *                 format: binary
+ *                 description: "Ảnh đại diện người già (tùy chọn)"
  *     responses:
  *       201:
  *         description: Profile created
  */
-router.post('/', protect, authorize(ROLES.CARESEEKER), createElderlyProfile);
+router.post('/', protect, authorize(ROLES.CARESEEKER), uploadElderlyAvatarOptional, createElderlyProfile);
 
 /**
  * @swagger
@@ -173,6 +290,9 @@ router.post('/', protect, authorize(ROLES.CARESEEKER), createElderlyProfile);
  *                         type: string
  *                       phone:
  *                         type: string
+ *                       avatar:
+ *                         type: string
+ *                         description: "URL ảnh đại diện"
  *                       bloodType:
  *                         type: string
  *                       medicalConditions:
@@ -235,6 +355,9 @@ router.get('/', protect, authorize(ROLES.CARESEEKER), getMyElderlyProfiles);
  *                       type: string
  *                     phone:
  *                       type: string
+ *                     avatar:
+ *                       type: string
+ *                       description: "URL ảnh đại diện"
  *                     bloodType:
  *                       type: string
  *                     medicalConditions:
@@ -326,22 +449,29 @@ router.get('/:id', protect, getElderlyProfileById);
  *             properties:
  *               fullName:
  *                 type: string
+ *                 example: "Nguyễn Văn A"
  *               age:
  *                 type: number
+ *                 example: 75
  *               gender:
  *                 type: string
  *                 enum: [Nam, Nữ]
+ *                 example: "Nam"
  *               address:
  *                 type: string
+ *                 example: "123 Nguyễn Huệ, Q1, TPHCM"
  *               phone:
  *                 type: string
+ *                 example: "0123456789"
  *               bloodType:
  *                 type: string
  *                 enum: [A, B, AB, O, Không rõ]
+ *                 example: "A"
  *               medicalConditions:
  *                 type: array
  *                 items:
  *                   type: string
+ *                 example: ["Tiểu đường", "Cao huyết áp"]
  *               medications:
  *                 type: array
  *                 items:
@@ -349,14 +479,19 @@ router.get('/:id', protect, getElderlyProfileById);
  *                   properties:
  *                     name:
  *                       type: string
+ *                       example: "Metformin"
  *                     dosage:
  *                       type: string
+ *                       example: "500mg"
  *                     frequency:
  *                       type: string
+ *                       example: "2 lần/ngày"
  *                     allergies:
  *                       type: string
+ *                       example: "Không"
  *               allergies:
  *                 type: string
+ *                 example: "Dị ứng hải sản"
  *               selfCareActivities:
  *                 type: array
  *                 items:
@@ -365,18 +500,23 @@ router.get('/:id', protect, getElderlyProfileById);
  *                     activity:
  *                       type: string
  *                       enum: [Ăn uống, Tắm rửa, Di chuyển, Mặc đồ]
+ *                       example: "Ăn uống"
  *                     needHelp:
  *                       type: boolean
+ *                       example: false
  *               livingEnvironment:
  *                 type: object
  *                 properties:
  *                   type:
  *                     type: string
  *                     enum: [Căn hộ chung cư, Nhà riêng, Viện dưỡng lão, Khác]
+ *                     example: "Nhà riêng"
  *                   hasFamily:
  *                     type: boolean
+ *                     example: true
  *                   familyNote:
  *                     type: string
+ *                     example: "Sống cùng con trai"
  *               preferences:
  *                 type: object
  *                 properties:
@@ -384,28 +524,147 @@ router.get('/:id', protect, getElderlyProfileById);
  *                     type: array
  *                     items:
  *                       type: string
+ *                     example: ["Đọc sách", "Nghe nhạc"]
  *                   favoriteFoods:
  *                     type: array
  *                     items:
  *                       type: string
+ *                     example: ["Cháo", "Phở"]
  *                   dietaryRestrictions:
  *                     type: string
+ *                     example: "Ăn ít muối, ít đường"
  *               emergencyContact:
  *                 type: object
  *                 properties:
  *                   name:
  *                     type: string
+ *                     example: "Nguyễn Văn B"
  *                   relationship:
  *                     type: string
+ *                     example: "Con trai"
  *                   phone:
  *                     type: string
+ *                     example: "0987654321"
  *               specialNotes:
  *                 type: string
+ *                 example: "Cần hỗ trợ di chuyển lên xuống cầu thang"
+ *               avatar:
+ *                 type: string
+ *                 description: "URL ảnh đại diện (nếu đã upload trước)"
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               fullName:
+ *                 type: string
+ *                 example: "Nguyễn Văn A"
+ *               age:
+ *                 type: number
+ *                 example: 75
+ *               gender:
+ *                 type: string
+ *                 enum: [Nam, Nữ]
+ *                 example: "Nam"
+ *               address:
+ *                 type: string
+ *                 example: "123 Nguyễn Huệ, Q1, TPHCM"
+ *               phone:
+ *                 type: string
+ *                 example: "0123456789"
+ *               bloodType:
+ *                 type: string
+ *                 enum: [A, B, AB, O, Không rõ]
+ *                 example: "A"
+ *               medicalConditions:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ["Tiểu đường", "Cao huyết áp"]
+ *               medications:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     name:
+ *                       type: string
+ *                       example: "Metformin"
+ *                     dosage:
+ *                       type: string
+ *                       example: "500mg"
+ *                     frequency:
+ *                       type: string
+ *                       example: "2 lần/ngày"
+ *                     allergies:
+ *                       type: string
+ *                       example: "Không"
+ *               allergies:
+ *                 type: string
+ *                 example: "Dị ứng hải sản"
+ *               selfCareActivities:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     activity:
+ *                       type: string
+ *                       enum: [Ăn uống, Tắm rửa, Di chuyển, Mặc đồ]
+ *                       example: "Ăn uống"
+ *                     needHelp:
+ *                       type: boolean
+ *                       example: false
+ *               livingEnvironment:
+ *                 type: object
+ *                 properties:
+ *                   type:
+ *                     type: string
+ *                     enum: [Căn hộ chung cư, Nhà riêng, Viện dưỡng lão, Khác]
+ *                     example: "Nhà riêng"
+ *                   hasFamily:
+ *                     type: boolean
+ *                     example: true
+ *                   familyNote:
+ *                     type: string
+ *                     example: "Sống cùng con trai"
+ *               preferences:
+ *                 type: object
+ *                 properties:
+ *                   hobbies:
+ *                     type: array
+ *                     items:
+ *                       type: string
+ *                     example: ["Đọc sách", "Nghe nhạc"]
+ *                   favoriteFoods:
+ *                     type: array
+ *                     items:
+ *                       type: string
+ *                     example: ["Cháo", "Phở"]
+ *                   dietaryRestrictions:
+ *                     type: string
+ *                     example: "Ăn ít muối, ít đường"
+ *               emergencyContact:
+ *                 type: object
+ *                 properties:
+ *                   name:
+ *                     type: string
+ *                     example: "Nguyễn Văn B"
+ *                   relationship:
+ *                     type: string
+ *                     example: "Con trai"
+ *                   phone:
+ *                     type: string
+ *                     example: "0987654321"
+ *               specialNotes:
+ *                 type: string
+ *                 example: "Cần hỗ trợ di chuyển lên xuống cầu thang"
+ *               avatar:
+ *                 type: string
+ *                 format: binary
+ *                 description: "Ảnh đại diện người già (tùy chọn)"
  *     responses:
  *       200:
  *         description: Updated
  */
-router.put('/:id', protect, authorize(ROLES.CARESEEKER), updateElderlyProfile);
+router.put('/:id', protect, authorize(ROLES.CARESEEKER), uploadElderlyAvatarOptional, updateElderlyProfile);
 
 /**
  * @swagger
@@ -426,19 +685,5 @@ router.put('/:id', protect, authorize(ROLES.CARESEEKER), updateElderlyProfile);
  *         description: Deleted
  */
 router.delete('/:id', protect, authorize(ROLES.CARESEEKER), deleteElderlyProfile);
-
-/**
- * @swagger
- * /api/profiles/care-seeker:
- *   get:
- *     summary: Get care seeker's elderly profiles (for booking)
- *     tags: [Elderly]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: List of elderly profiles
- */
-router.get('/profiles/care-seeker', protect, authorize(ROLES.CARESEEKER), getCareseekerProfiles);
 
 module.exports = router;
