@@ -18,7 +18,7 @@ const createOrGetChat = async (req, res, next) => {
     }
 
     // Cannot chat with yourself
-    if (participantId === req.user.id) {
+    if (participantId === req.user._id.toString()) {
       return res.status(400).json({
         success: false,
         message: 'Không thể tạo cuộc trò chuyện với chính bạn'
@@ -35,16 +35,17 @@ const createOrGetChat = async (req, res, next) => {
     }
 
     // Find existing chat
+    const userId = req.user._id.toString();
     let chat = await Chat.findOne({
-      participants: { $all: [req.user.id, participantId] }
+      participants: { $all: [req.user._id, participantId] }
     }).populate('participants', 'name email role');
 
     // Create new chat if doesn't exist
     if (!chat) {
       chat = await Chat.create({
-        participants: [req.user.id, participantId],
+        participants: [req.user._id, participantId],
         unreadCount: {
-          [req.user.id]: 0,
+          [userId]: 0,
           [participantId]: 0
         }
       });
@@ -70,8 +71,9 @@ const createOrGetChat = async (req, res, next) => {
  */
 const getMyChats = async (req, res, next) => {
   try {
+    const userId = req.user._id.toString();
     const chats = await Chat.find({
-      participants: req.user.id
+      participants: req.user._id
     })
       .populate('participants', 'name email role')
       .populate('lastMessage.sender', 'name')
@@ -82,7 +84,7 @@ const getMyChats = async (req, res, next) => {
       _id: chat._id,
       participants: chat.participants,
       lastMessage: chat.lastMessage,
-      unreadCount: chat.unreadCount.get(req.user.id) || 0,
+      unreadCount: chat.unreadCount.get(userId) || 0,
       updatedAt: chat.updatedAt
     }));
 
@@ -115,8 +117,9 @@ const getChatDetail = async (req, res, next) => {
     }
 
     // Check if user is participant
+    const userId = req.user._id.toString();
     const isParticipant = chat.participants.some(
-      p => p._id.toString() === req.user.id
+      p => p._id.toString() === userId
     );
 
     if (!isParticipant) {
@@ -131,7 +134,7 @@ const getChatDetail = async (req, res, next) => {
       data: {
         _id: chat._id,
         participants: chat.participants,
-        unreadCount: chat.unreadCount.get(req.user.id) || 0,
+        unreadCount: chat.unreadCount.get(userId) || 0,
         createdAt: chat.createdAt,
         updatedAt: chat.updatedAt
       }
@@ -162,8 +165,9 @@ const getMessages = async (req, res, next) => {
     }
 
     // Check if user is participant
+    const userId = req.user._id.toString();
     const isParticipant = chat.participants.some(
-      p => p.toString() === req.user.id
+      p => p.toString() === userId
     );
 
     if (!isParticipant) {
@@ -228,8 +232,9 @@ const sendMessage = async (req, res, next) => {
     }
 
     // Check if user is participant
+    const userId = req.user._id.toString();
     const isParticipant = chat.participants.some(
-      p => p.toString() === req.user.id
+      p => p.toString() === userId
     );
 
     if (!isParticipant) {
@@ -240,7 +245,7 @@ const sendMessage = async (req, res, next) => {
     }
 
     // Add message using model method
-    await chat.addMessage(req.user.id, content.trim());
+    await chat.addMessage(userId, content.trim());
 
     // Get the last added message
     const message = chat.messages[chat.messages.length - 1];
@@ -252,7 +257,7 @@ const sendMessage = async (req, res, next) => {
     if (req.io) {
       // Find other participant
       const otherParticipant = chat.participants.find(
-        p => p.toString() !== req.user.id
+        p => p.toString() !== userId
       );
       
       req.io.to(otherParticipant.toString()).emit('new_message', {
@@ -289,8 +294,9 @@ const markAsRead = async (req, res, next) => {
     }
 
     // Check if user is participant
+    const userId = req.user._id.toString();
     const isParticipant = chat.participants.some(
-      p => p.toString() === req.user.id
+      p => p.toString() === userId
     );
 
     if (!isParticipant) {
@@ -300,7 +306,7 @@ const markAsRead = async (req, res, next) => {
       });
     }
 
-    await chat.markAsRead(req.user.id);
+    await chat.markAsRead(userId);
 
     res.status(200).json({
       success: true,
@@ -319,13 +325,14 @@ const markAsRead = async (req, res, next) => {
  */
 const getUnreadCount = async (req, res, next) => {
   try {
+    const userId = req.user._id.toString();
     const chats = await Chat.find({
-      participants: req.user.id
+      participants: req.user._id
     });
 
     let totalUnread = 0;
     chats.forEach(chat => {
-      totalUnread += chat.unreadCount.get(req.user.id) || 0;
+      totalUnread += chat.unreadCount.get(userId) || 0;
     });
 
     res.status(200).json({
