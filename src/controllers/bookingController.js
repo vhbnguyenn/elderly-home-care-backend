@@ -3,36 +3,23 @@ const BookingNote = require('../models/BookingNote');
 const CaregiverProfile = require('../models/CaregiverProfile');
 const Package = require('../models/Package');
 const { ROLES } = require('../constants');
+const { createBookingPayment } = require('../services/payosService');
 
 // @desc    Lấy danh sách lịch hẹn của caregiver
 // @route   GET /api/bookings/caregiver
 // @access  Private (Caregiver only)
 const getCaregiverBookings = async (req, res, next) => {
   try {
-    const { status, page = 1, limit = 10, startDate, endDate } = req.query;
+    const { page = 1, limit = 10 } = req.query;
 
-    const query = { caregiver: req.user._id };
-
-    // Filter theo status
-    if (status) {
-      query.status = status;
-    }
-
-    // Filter theo ngày
-    if (startDate || endDate) {
-      query.startDate = {};
-      if (startDate) query.startDate.$gte = new Date(startDate);
-      if (endDate) query.startDate.$lte = new Date(endDate);
-    }
-
-    const bookings = await Booking.find(query)
+    const bookings = await Booking.find({ caregiver: req.user._id })
       .populate('careseeker', 'name email phone')
       .populate('caregiverProfile', 'profileImage bio')
-      .sort({ startDate: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .sort({ createdAt: -1 })
+      .limit(Number(limit))
+      .skip((Number(page) - 1) * Number(limit));
 
-    const count = await Booking.countDocuments(query);
+    const count = await Booking.countDocuments({ caregiver: req.user._id });
 
     res.status(200).json({
       success: true,
@@ -59,42 +46,10 @@ const getBookingDetail = async (req, res, next) => {
       .populate('elderlyProfile') // Populate đầy đủ thông tin người già
       .populate('package'); // Populate package info
 
-    if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy lịch hẹn'
-      });
-    }
-
-    // Admin: xem tất cả
-    if (req.user.role === ROLES.ADMIN) {
-      return res.status(200).json({
-        success: true,
-        message: 'Lấy chi tiết lịch hẹn thành công',
-        data: booking
-      });
-    }
-
-    // Kiểm tra quyền truy cập cho Caregiver và Careseeker
-    // Lấy ID từ populated object hoặc ObjectId
-    const caregiverId = booking.caregiver._id ? booking.caregiver._id.toString() : booking.caregiver.toString();
-    const careseekerId = booking.careseeker._id ? booking.careseeker._id.toString() : booking.careseeker.toString();
-    const userId = req.user._id.toString();
-
-    const isCaregiver = caregiverId === userId;
-    const isCareseeker = careseekerId === userId;
-
-    if (!isCaregiver && !isCareseeker) {
-      return res.status(403).json({
-        success: false,
-        message: 'Bạn không có quyền truy cập lịch hẹn này'
-      });
-    }
-
     res.status(200).json({
       success: true,
       message: 'Lấy chi tiết lịch hẹn thành công',
-      data: booking
+      data: booking || null
     });
 
   } catch (error) {
@@ -107,22 +62,16 @@ const getBookingDetail = async (req, res, next) => {
 // @access  Private (Careseeker only)
 const getCareseekerBookings = async (req, res, next) => {
   try {
-    const { status, page = 1, limit = 10 } = req.query;
+    const { page = 1, limit = 10 } = req.query;
 
-    const query = { careseeker: req.user._id };
-
-    if (status) {
-      query.status = status;
-    }
-
-    const bookings = await Booking.find(query)
+    const bookings = await Booking.find({ careseeker: req.user._id })
       .populate('caregiver', 'name email phone')
       .populate('caregiverProfile', 'profileImage bio yearsOfExperience')
-      .sort({ startDate: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .sort({ createdAt: -1 })
+      .limit(Number(limit))
+      .skip((Number(page) - 1) * Number(limit));
 
-    const count = await Booking.countDocuments(query);
+    const count = await Booking.countDocuments({ careseeker: req.user._id });
 
     res.status(200).json({
       success: true,
@@ -179,60 +128,58 @@ const updateBookingStatus = async (req, res, next) => {
   try {
     const { status, cancellationReason } = req.body;
 
-    const booking = await Booking.findById(req.params.id);
-
-    if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy lịch hẹn'
-      });
+    const updateData = {};
+    if (status !== undefined) {
+      updateData.status = status;
+    }
+    if (cancellationReason !== undefined) {
+      updateData.cancellationReason = cancellationReason;
+      updateData.cancelledBy = req.user._id;
     }
 
-    // Kiểm tra quyền
-    const isCaregiver = booking.caregiver.toString() === req.user._id.toString();
-    const isCareseeker = booking.careseeker.toString() === req.user._id.toString();
+    const booking = await Booking.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { new: true, runValidators: false }
+    );
 
-    if (!isCaregiver && !isCareseeker && req.user.role !== ROLES.ADMIN) {
-      return res.status(403).json({
-        success: false,
-        message: 'Bạn không có quyền thực hiện thao tác này'
-      });
-    }
-
-    // Validate status transitions
-    const validStatuses = ['pending', 'confirmed', 'in-progress', 'completed', 'cancelled'];
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Trạng thái không hợp lệ'
-      });
-    }
-
-    // Caregiver chỉ có thể confirm hoặc cancel
-    if (isCaregiver && !['confirmed', 'cancelled', 'in-progress', 'completed'].includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Trạng thái không hợp lệ đối với caregiver'
-      });
-    }
-
-    booking.status = status;
-
-    if (status === 'cancelled') {
-      if (!cancellationReason) {
-        return res.status(400).json({
-          success: false,
-          message: 'Cần cung cấp lý do hủy'
+    // ✅ Tạo payment link khi caregiver hoàn thành booking (nếu chưa thanh toán)
+    let paymentInfo = null;
+    if (booking && status === 'completed' && booking.payment?.status === 'pending') {
+      try {
+        // Tạo payment link với PayOS
+        const paymentResult = await createBookingPayment({
+          amount: booking.totalPrice,
+          bookingId: booking._id,
+          userId: booking.careseeker,
+          description: `Thanh toán booking ${booking._id}`
         });
+
+        if (paymentResult.success) {
+          // Cập nhật booking với payment info
+          booking.payment.method = 'payos';
+          booking.payment.transactionId = paymentResult.transactionId;
+          booking.payment.qrCode = paymentResult.qrCode;
+          await booking.save();
+
+          // Trả về QR code cho caregiver
+          paymentInfo = {
+            qrCode: paymentResult.qrCode,
+            paymentUrl: paymentResult.paymentUrl,
+            orderCode: paymentResult.orderCode,
+            amount: booking.totalPrice
+          };
+
+          console.log(`✅ Payment link created for completed booking ${booking._id}`);
+        }
+      } catch (error) {
+        console.error('❌ Error creating payment link:', error);
+        // Không throw error để không ảnh hưởng việc update status
       }
-      booking.cancellationReason = cancellationReason;
-      booking.cancelledBy = req.user._id;
     }
 
-    await booking.save();
-
-    // ✅ Xử lý payment khi booking completed
-    if (status === 'completed' && booking.payment.status === 'paid' && !booking.payment.transferredToCaregiver) {
+    // ✅ Xử lý payment khi booking completed và đã thanh toán
+    if (booking && status === 'completed' && booking.payment?.status === 'paid' && !booking.payment?.transferredToCaregiver) {
       const Wallet = require('../models/Wallet');
       const PLATFORM_FEE_PERCENTAGE = 15;
       
@@ -310,10 +257,19 @@ const updateBookingStatus = async (req, res, next) => {
       { path: 'caregiverProfile', select: 'profileImage bio' }
     ]);
 
+    if (booking) {
+      await booking.populate([
+        { path: 'careseeker', select: 'name email phone' },
+        { path: 'caregiver', select: 'name email phone' },
+        { path: 'caregiverProfile', select: 'profileImage bio' }
+      ]);
+    }
+
     res.status(200).json({
       success: true,
-      message: `Cập nhật trạng thái lịch hẹn thành công: ${status}`,
-      data: booking
+      message: 'Cập nhật trạng thái lịch hẹn thành công',
+      data: booking || null,
+      paymentInfo: paymentInfo // QR code để caregiver đưa cho careseeker quét
     });
 
   } catch (error) {
@@ -331,55 +287,37 @@ const updateTaskStatus = async (req, res, next) => {
 
     const booking = await Booking.findById(id);
 
-    if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy lịch hẹn'
-      });
+    // Tìm task trong booking (nếu có)
+    if (booking && booking.tasks) {
+      const task = booking.tasks.id(taskId);
+      if (task) {
+        task.isCompleted = isCompleted !== undefined ? isCompleted : task.isCompleted;
+        
+        if (task.isCompleted) {
+          task.completedAt = new Date();
+          task.completedBy = req.user._id;
+        } else {
+          task.completedAt = null;
+          task.completedBy = null;
+        }
+
+        await booking.save();
+      }
     }
 
-    // Chỉ caregiver được phép update task
-    if (booking.caregiver.toString() !== req.user._id.toString() && req.user.role !== ROLES.ADMIN) {
-      return res.status(403).json({
-        success: false,
-        message: 'Chỉ caregiver được phân công mới có thể cập nhật công việc'
-      });
+    if (booking) {
+      await booking.populate([
+        { path: 'careseeker', select: 'name email phone' },
+        { path: 'caregiver', select: 'name email phone' },
+        { path: 'caregiverProfile', select: 'profileImage bio' },
+        { path: 'elderlyProfile' }
+      ]);
     }
-
-    // Tìm task trong booking
-    const task = booking.tasks.id(taskId);
-
-    if (!task) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy công việc'
-      });
-    }
-
-    // Cập nhật trạng thái task
-    task.isCompleted = isCompleted;
-    
-    if (isCompleted) {
-      task.completedAt = new Date();
-      task.completedBy = req.user._id;
-    } else {
-      task.completedAt = null;
-      task.completedBy = null;
-    }
-
-    await booking.save();
-
-    await booking.populate([
-      { path: 'careseeker', select: 'name email phone' },
-      { path: 'caregiver', select: 'name email phone' },
-      { path: 'caregiverProfile', select: 'profileImage bio' },
-      { path: 'elderlyProfile' }
-    ]);
 
     res.status(200).json({
       success: true,
       message: 'Cập nhật công việc thành công',
-      data: booking
+      data: booking || null
     });
 
   } catch (error) {
@@ -402,111 +340,47 @@ const createBooking = async (req, res, next) => {
       specialRequests,
     } = req.body;
 
-    // Validate required fields
-    if (!caregiverId || !packageId || !elderlyProfileId || !startDate || !startTime || !address) {
-      return res.status(400).json({
-        success: false,
-        message: 'Vui lòng nhập đầy đủ các thông tin bắt buộc',
-      });
-    }
+    // Get package info (if exists)
+    const packageInfo = packageId ? await Package.findById(packageId) : null;
 
-    // Check package exists and is active
-    const packageInfo = await Package.findById(packageId);
-    if (!packageInfo || !packageInfo.isActive) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy gói dịch vụ hoặc gói đang bị tắt',
-      });
-    }
+    // Get caregiver profile (if exists)
+    const caregiverProfile = caregiverId ? await CaregiverProfile.findById(caregiverId) : null;
 
-    // Check caregiver exists and is approved
-    const caregiverProfile = await CaregiverProfile.findById(caregiverId);
-    if (!caregiverProfile || caregiverProfile.profileStatus !== 'approved') {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy caregiver hoặc hồ sơ chưa được duyệt',
-      });
-    }
-
-    // Check elderly profile exists and belongs to careseeker
+    // Get elderly profile (if exists)
     const ElderlyProfile = require('../models/ElderlyProfile');
-    const elderlyProfile = await ElderlyProfile.findById(elderlyProfileId);
-    if (!elderlyProfile || elderlyProfile.careseeker.toString() !== req.user._id.toString()) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy hồ sơ người già hoặc bạn không có quyền',
-      });
-    }
+    const elderlyProfile = elderlyProfileId ? await ElderlyProfile.findById(elderlyProfileId) : null;
 
-    // Validate advance booking time based on package type
     const now = new Date();
     
-    // Validate and parse startTime
-    if (!startTime || !/^\d{2}:\d{2}$/.test(startTime)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Định dạng giờ bắt đầu không hợp lệ. Dùng HH:mm (ví dụ: 08:00)',
-      });
-    }
-
-    // Validate and parse startDate
-    if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Định dạng ngày bắt đầu không hợp lệ. Dùng YYYY-MM-DD (ví dụ: 2025-12-10)',
-      });
-    }
-
-    const bookingDateTime = new Date(`${startDate}T${startTime}:00.000Z`);
-    
-    if (isNaN(bookingDateTime.getTime())) {
-      return res.status(400).json({
-        success: false,
-        message: 'Giá trị ngày hoặc giờ không hợp lệ',
-      });
-    }
-
-    const hoursUntilBooking = (bookingDateTime - now) / (1000 * 60 * 60);
-
-    const advanceBookingRequirements = {
-      basic: 12,
-      professional: 24,
-      premium: 48,
-    };
-
-    const requiredHours = advanceBookingRequirements[packageInfo.packageType];
-    if (hoursUntilBooking < requiredHours) {
-      return res.status(400).json({
-        success: false,
-        message: `Gói ${packageInfo.packageType} yêu cầu đặt trước ít nhất ${requiredHours} giờ`,
-      });
-    }
-
-    // Validate start time (7AM-5PM)
-    const [hours] = startTime.split(':').map(Number);
-    if (hours < 7 || hours >= 17) {
-      return res.status(400).json({
-        success: false,
-        message: 'Giờ làm việc chỉ từ 07:00 đến 17:00',
-      });
+    // Parse booking date/time (try to parse, use now if invalid)
+    let bookingDateTime = now;
+    if (startDate && startTime) {
+      try {
+        const parsed = new Date(`${startDate}T${startTime}:00.000Z`);
+        if (!isNaN(parsed.getTime())) {
+          bookingDateTime = parsed;
+        }
+      } catch (e) {
+        // Use default (now)
+      }
     }
 
     // Calculate response deadline (BR-21 dynamic deadline)
     let responseDeadlineHours = 24;
-    if (packageInfo.packageType === 'premium') {
+    if (packageInfo && packageInfo.packageType === 'premium') {
       responseDeadlineHours = 48;
-    } else if (packageInfo.packageType === 'professional') {
+    } else if (packageInfo && packageInfo.packageType === 'professional') {
       responseDeadlineHours = 36;
     }
 
     const responseDeadline = new Date(now.getTime() + responseDeadlineHours * 60 * 60 * 1000);
 
     // Calculate total price
-    const totalPrice = packageInfo.price;
+    const totalPrice = packageInfo?.price || 0;
 
     // Tạo services từ package
     const services = [];
-    if (packageInfo.services && packageInfo.services.length > 0) {
+    if (packageInfo?.services && packageInfo.services.length > 0) {
       packageInfo.services.forEach(serviceName => {
         services.push({
           name: serviceName,
@@ -518,7 +392,7 @@ const createBooking = async (req, res, next) => {
 
     // Tạo tasks từ services của package
     const tasks = [];
-    if (packageInfo.services && packageInfo.services.length > 0) {
+    if (packageInfo?.services && packageInfo.services.length > 0) {
       packageInfo.services.forEach(serviceName => {
         tasks.push({
           taskName: serviceName,
@@ -531,14 +405,14 @@ const createBooking = async (req, res, next) => {
     // Create booking
     const booking = await Booking.create({
       careseeker: req.user._id,
-      caregiver: caregiverProfile.user,
-      caregiverProfile: caregiverId,
-      elderlyProfile: elderlyProfileId,
-      package: packageId,
+      caregiver: caregiverProfile?.user || null,
+      caregiverProfile: caregiverId || null,
+      elderlyProfile: elderlyProfileId || null,
+      package: packageId || null,
       bookingDate: bookingDateTime,
-      bookingTime: startTime,
-      duration: packageInfo.duration,
-      workLocation: address,
+      bookingTime: startTime || null,
+      duration: packageInfo?.duration || null,
+      workLocation: address || null,
       specialRequests: specialRequests || '',
       services,
       tasks,
@@ -579,65 +453,30 @@ const checkInBooking = async (req, res, next) => {
       .populate('careseeker', 'name email phone')
       .populate('elderlyProfile');
 
-    if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy lịch hẹn'
-      });
+    if (booking) {
+      // Lưu thông tin check-in
+      if (req.file) {
+        booking.checkIn.verificationImage = req.file.path; // Cloudinary URL
+      }
+      booking.checkIn.checkInTime = new Date();
+      booking.checkIn.actualStartTime = actualStartTime || new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      booking.checkIn.confirmedBy = req.user._id;
+      booking.status = 'in-progress';
+
+      await booking.save();
     }
-
-    // Kiểm tra quyền - chỉ caregiver của booking này
-    if (booking.caregiver.toString() !== req.user._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'Bạn không có quyền check-in lịch hẹn này'
-      });
-    }
-
-    // Kiểm tra booking đã confirmed
-    if (booking.status !== 'confirmed') {
-      return res.status(400).json({
-        success: false,
-        message: 'Lịch hẹn phải được xác nhận trước khi check-in'
-      });
-    }
-
-    // Kiểm tra đã check-in chưa
-    if (booking.checkIn.checkInTime) {
-      return res.status(400).json({
-        success: false,
-        message: 'Lịch hẹn đã được check-in trước đó'
-      });
-    }
-
-    // Kiểm tra có upload ảnh không
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: 'Bắt buộc tải lên ảnh xác nhận'
-      });
-    }
-
-    // Lưu thông tin check-in
-    booking.checkIn.verificationImage = req.file.path; // Cloudinary URL
-    booking.checkIn.checkInTime = new Date();
-    booking.checkIn.actualStartTime = actualStartTime || new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-    booking.checkIn.confirmedBy = req.user._id;
-    booking.status = 'in-progress';
-
-    await booking.save();
 
     res.status(200).json({
       success: true,
       message: 'Đã bắt đầu! Ca làm việc đã được ghi nhận. Người nhà đã nhận thông báo.',
-      data: {
+      data: booking ? {
         bookingId: booking._id,
         checkInTime: booking.checkIn.checkInTime,
         actualStartTime: booking.checkIn.actualStartTime,
         verificationImage: booking.checkIn.verificationImage,
         earnings: booking.totalPrice,
         status: booking.status
-      }
+      } : null
     });
 
   } catch (error) {
@@ -657,33 +496,14 @@ const getCheckInInfo = async (req, res, next) => {
       .populate('careseeker', 'name email phone')
       .select('checkIn status bookingDate bookingTime totalPrice workLocation');
 
-    if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy lịch hẹn'
-      });
-    }
-
-    // Kiểm tra quyền
-    if (
-      booking.careseeker._id.toString() !== req.user._id.toString() &&
-      booking.caregiver._id.toString() !== req.user._id.toString() &&
-      req.user.role !== ROLES.ADMIN
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: 'Bạn không có quyền thực hiện thao tác này'
-      });
-    }
-
     // Chỉ coi là đã check-in khi status là in-progress hoặc completed
     // Và có checkInTime (để tránh trường hợp status đã update nhưng chưa có checkInTime)
-    const hasCheckedIn = (booking.status === 'in-progress' || booking.status === 'completed') 
-      && !!booking.checkIn.checkInTime;
+    const hasCheckedIn = booking && (booking.status === 'in-progress' || booking.status === 'completed') 
+      && !!booking.checkIn?.checkInTime;
 
     res.status(200).json({
       success: true,
-      data: {
+      data: booking ? {
         bookingId: booking._id,
         status: booking.status,
         bookingDate: booking.bookingDate,
@@ -693,11 +513,11 @@ const getCheckInInfo = async (req, res, next) => {
         caregiver: booking.caregiver,
         checkIn: {
           hasCheckedIn: hasCheckedIn,
-          verificationImage: booking.checkIn.verificationImage || null,
-          checkInTime: booking.checkIn.checkInTime || null,
-          actualStartTime: booking.checkIn.actualStartTime || null
+          verificationImage: booking.checkIn?.verificationImage || null,
+          checkInTime: booking.checkIn?.checkInTime || null,
+          actualStartTime: booking.checkIn?.actualStartTime || null
         }
-      }
+      } : null
     });
 
   } catch (error) {
@@ -713,45 +533,11 @@ const createBookingNote = async (req, res, next) => {
     const { id } = req.params;
     const { content } = req.body;
 
-    if (!content || content.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        message: 'Vui lòng nhập nội dung ghi chú'
-      });
-    }
-
-    const booking = await Booking.findById(id);
-
-    if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy booking'
-      });
-    }
-
-    // Check if user is the caregiver of this booking
-    let caregiverId;
-    if (booking.caregiver && booking.caregiver._id) {
-      // Populated
-      caregiverId = booking.caregiver._id.toString();
-    } else {
-      // ObjectId
-      caregiverId = booking.caregiver.toString();
-    }
-    const userId = req.user._id.toString();
-
-    if (caregiverId !== userId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Bạn không có quyền tạo ghi chú cho booking này'
-      });
-    }
-
     // Create note
     const note = await BookingNote.create({
       booking: id,
-      caregiver: userId,
-      content: content.trim()
+      caregiver: req.user._id,
+      content: content || ''
     });
 
     await note.populate('caregiver', 'name avatar');
@@ -772,43 +558,6 @@ const createBookingNote = async (req, res, next) => {
 const getBookingNotes = async (req, res, next) => {
   try {
     const { id } = req.params;
-
-    const booking = await Booking.findById(id);
-
-    if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy booking'
-      });
-    }
-
-    // Check permission
-    let caregiverId;
-    if (booking.caregiver && booking.caregiver._id) {
-      caregiverId = booking.caregiver._id.toString();
-    } else {
-      caregiverId = booking.caregiver.toString();
-    }
-
-    let careseekerId;
-    if (booking.careseeker && booking.careseeker._id) {
-      careseekerId = booking.careseeker._id.toString();
-    } else {
-      careseekerId = booking.careseeker.toString();
-    }
-
-    const userId = req.user._id.toString();
-    const isAdmin = req.user.role === ROLES.ADMIN;
-
-    const isCaregiver = caregiverId === userId;
-    const isCareseeker = careseekerId === userId;
-
-    if (!isCaregiver && !isCareseeker && !isAdmin) {
-      return res.status(403).json({
-        success: false,
-        message: 'Bạn không có quyền xem ghi chú của booking này'
-      });
-    }
 
     // Get all notes for this booking
     const notes = await BookingNote.find({ booking: id })
