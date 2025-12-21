@@ -176,6 +176,51 @@ const disputeSchema = new mongoose.Schema(
       default: 'pending'
     },
     
+    // Admin cho phép phản hồi/bổ sung bằng chứng (riêng biệt cho từng bên)
+    allowComplainantResponse: {
+      type: Boolean,
+      default: false
+    },
+    allowRespondentResponse: {
+      type: Boolean,
+      default: false
+    },
+    
+    // Mảng các phản hồi từ cả 2 bên
+    responses: [{
+      from: {
+        type: String,
+        enum: ['complainant', 'respondent'],
+        required: true
+      },
+      userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+      },
+      message: {
+        type: String,
+        trim: true,
+        maxlength: [2000, 'Response message cannot exceed 2000 characters']
+      },
+      evidence: [{
+        type: {
+          type: String,
+          enum: ['image', 'video', 'document', 'audio']
+        },
+        url: String,
+        description: String,
+        uploadedAt: {
+          type: Date,
+          default: Date.now
+        }
+      }],
+      respondedAt: {
+        type: Date,
+        default: Date.now
+      }
+    }],
+    
     // Admin xử lý
     assignedTo: {
       type: mongoose.Schema.Types.ObjectId,

@@ -99,74 +99,6 @@ router.post('/', protect, disputeController.createDispute);
 
 /**
  * @swagger
- * /api/disputes/my-disputes:
- *   get:
- *     summary: Lấy danh sách khiếu nại của tôi (là người khiếu nại)
- *     tags: [Disputes]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: page
- *         schema:
- *           type: number
- *           default: 1
- *       - in: query
- *         name: limit
- *         schema:
- *           type: number
- *           default: 10
- *       - in: query
- *         name: sortBy
- *         schema:
- *           type: string
- *           default: -createdAt
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Disputes retrieved successfully
- */
-router.get('/my-disputes', protect, disputeController.getMyDisputes);
-
-/**
- * @swagger
- * /api/disputes/against-me:
- *   get:
- *     summary: Lấy danh sách khiếu nại chống lại tôi (là người bị khiếu nại)
- *     tags: [Disputes]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: page
- *         schema:
- *           type: number
- *           default: 1
- *       - in: query
- *         name: limit
- *         schema:
- *           type: number
- *           default: 10
- *       - in: query
- *         name: sortBy
- *         schema:
- *           type: string
- *           default: -createdAt
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Disputes retrieved successfully
- */
-router.get('/against-me', protect, disputeController.getDisputesAgainstMe);
-
-/**
- * @swagger
  * /api/disputes/admin/all:
  *   get:
  *     summary: Lấy tất cả khiếu nại (Admin only)
@@ -243,7 +175,8 @@ router.get('/:id', protect, disputeController.getDisputeDetail);
  * @swagger
  * /api/disputes/{id}/respond:
  *   post:
- *     summary: Người bị khiếu nại phản hồi
+ *     summary: Phản hồi/bổ sung bằng chứng (cả 2 bên - chỉ khi admin cho phép)
+ *     description: Người khiếu nại và người bị khiếu nại đều có thể phản hồi/bổ sung bằng chứng, nhưng chỉ hoạt động khi admin đã bật allowComplainantResponse (cho người khiếu nại) hoặc allowRespondentResponse (cho người bị khiếu nại)
  *     tags: [Disputes]
  *     security:
  *       - bearerAuth: []
@@ -254,19 +187,19 @@ router.get('/:id', protect, disputeController.getDisputeDetail);
  *         schema:
  *           type: string
  *     requestBody:
- *       required: true
+ *       required: false
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - message
  *             properties:
  *               message:
  *                 type: string
  *                 maxLength: 2000
+ *                 description: Nội dung phản hồi (tùy chọn)
  *               evidence:
  *                 type: array
+ *                 description: Bổ sung bằng chứng (tùy chọn)
  *                 items:
  *                   type: object
  *                   properties:
@@ -280,10 +213,8 @@ router.get('/:id', protect, disputeController.getDisputeDetail);
  *     responses:
  *       200:
  *         description: Response submitted successfully
- *       400:
- *         description: Cannot respond at this status
  *       403:
- *         description: Forbidden - not the respondent
+ *         description: Forbidden - admin chưa cho phép hoặc không phải complainant/respondent
  *       404:
  *         description: Dispute not found
  */
@@ -459,19 +390,25 @@ router.post('/:id/decide', protect, authorize(ROLES.ADMIN), disputeController.ma
  *         schema:
  *           type: string
  *     requestBody:
- *       required: true
+ *       required: false
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - status
  *             properties:
  *               status:
  *                 type: string
  *                 enum: [pending, under_review, awaiting_response, investigating, mediation, refund_approved, refund_processing, refund_completed, resolved, rejected, withdrawn, escalated]
+ *                 description: Trạng thái khiếu nại
  *               note:
  *                 type: string
+ *                 description: Ghi chú khi cập nhật trạng thái
+ *               allowComplainantResponse:
+ *                 type: boolean
+ *                 description: Cho phép/không cho phép người khiếu nại phản hồi/bổ sung bằng chứng
+ *               allowRespondentResponse:
+ *                 type: boolean
+ *                 description: Cho phép/không cho phép người bị khiếu nại phản hồi
  *     responses:
  *       200:
  *         description: Status updated successfully
