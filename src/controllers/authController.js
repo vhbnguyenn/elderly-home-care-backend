@@ -1,5 +1,4 @@
 const User = require('../models/User');
-const { changePasswordSchema, createUserByAdminSchema } = require('../utils/validation');
 const { verifyRefreshToken } = require('../utils/tokenHelper');
 const { sendVerificationCode, sendWelcomeEmail, sendResetPasswordCode } = require('../utils/sendEmail');
 
@@ -167,7 +166,7 @@ const getMe = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      data: user
+      data: user || null
     });
   } catch (error) {
     next(error);
@@ -185,36 +184,24 @@ const updateProfile = async (req, res, next) => {
 
     const user = await User.findById(req.user.id);
 
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy người dùng'
-      });
-    }
-
-    // Update fields if provided
-    if (name) user.name = name;
-    if (phone) user.phone = phone;
-    
-    // Check if email is being changed and if it's already taken
-    if (email && email !== user.email) {
-      const existingUser = await User.findOne({ email });
-      if (existingUser) {
-        return res.status(400).json({
-          success: false,
-          message: 'Email đã được sử dụng'
-        });
+    if (user) {
+      // Update fields if provided
+      if (name !== undefined) user.name = name;
+      if (phone !== undefined) user.phone = phone;
+      
+      // Update email if provided (không check duplicate)
+      if (email !== undefined && email !== user.email) {
+        user.email = email;
+        user.isEmailVerified = false; // Need to verify new email
       }
-      user.email = email;
-      user.isEmailVerified = false; // Need to verify new email
-    }
 
-    await user.save();
+      await user.save({ runValidators: false });
+    }
 
     res.status(200).json({
       success: true,
       message: 'Cập nhật hồ sơ thành công',
-      data: user
+      data: user || null
     });
 
   } catch (error) {
@@ -573,44 +560,16 @@ const resetPassword = async (req, res, next) => {
  */
 const changePassword = async (req, res, next) => {
   try {
-    // Validate input
-    const { error, value } = changePasswordSchema.validate(req.body, { 
-      abortEarly: false 
-    });
-
-    if (error) {
-      const errors = error.details.map(detail => detail.message);
-      return res.status(400).json({
-        success: false,
-        message: 'Dữ liệu không hợp lệ',
-        errors
-      });
-    }
-
-    const { currentPassword, newPassword } = value;
+    const { currentPassword, newPassword } = req.body;
 
     // Get user with password field
     const user = await User.findById(req.user.id).select('+password');
 
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy người dùng'
-      });
+    if (user && newPassword) {
+      // Update password (không check current password)
+      user.password = newPassword;
+      await user.save({ runValidators: false });
     }
-
-    // Check current password
-    const isMatch = await user.comparePassword(currentPassword);
-    if (!isMatch) {
-      return res.status(400).json({
-        success: false,
-        message: 'Mật khẩu hiện tại không đúng'
-      });
-    }
-
-    // Update password
-    user.password = newPassword;
-    await user.save();
 
     res.status(200).json({
       success: true,
@@ -633,15 +592,8 @@ const toggleUserStatus = async (req, res, next) => {
 
     const user = await User.findById(userId);
 
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy người dùng'
-      });
-    }
-
-    // Cannot block admin accounts
-    if (user.role === 'admin') {
+    // Cannot block admin accounts (authorization check - giữ lại)
+    if (user && user.role === 'admin') {
       return res.status(403).json({
         success: false,
         message: 'Không thể khóa tài khoản admin'
@@ -649,21 +601,23 @@ const toggleUserStatus = async (req, res, next) => {
     }
 
     // Toggle isActive status
-    user.isActive = !user.isActive;
-    await user.save();
+    if (user) {
+      user.isActive = !user.isActive;
+      await user.save({ runValidators: false });
+    }
 
-    const statusMessage = user.isActive ? 'kích hoạt' : 'khóa';
+    const statusMessage = user && user.isActive ? 'kích hoạt' : 'khóa';
 
     res.status(200).json({
       success: true,
-      message: `Tài khoản đã được ${statusMessage} thành công`,
-      data: {
+      message: user ? `Tài khoản đã được ${statusMessage} thành công` : 'Không tìm thấy người dùng',
+      data: user ? {
         userId: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
         isActive: user.isActive
-      }
+      } : null
     });
 
   } catch (error) {
@@ -733,41 +687,18 @@ const getAllUsers = async (req, res, next) => {
  */
 const createUserByAdmin = async (req, res, next) => {
   try {
-    // Validate input
-    const { error, value } = createUserByAdminSchema.validate(req.body, { 
-      abortEarly: false 
-    });
+    const { name, email, password, role, phone } = req.body;
 
-    if (error) {
-      const errors = error.details.map(detail => detail.message);
-      return res.status(400).json({
-        success: false,
-        message: 'Dữ liệu không hợp lệ',
-        errors
-      });
-    }
-
-    const { name, email, password, role, phone } = value;
-
-    // Check if email already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email đã được đăng ký'
-      });
-    }
-
-    // Create user
+    // Create user (không validate, không check email duplicate)
     const user = await User.create({
-      name: name || email.split('@')[0],
-      email,
-      password,
-      role,
-      phone,
+      name: name || (email ? email.split('@')[0] : 'User'),
+      email: email || '',
+      password: password || '',
+      role: role || 'careseeker',
+      phone: phone || '',
       isEmailVerified: true, // Admin-created accounts are auto-verified
       isActive: true
-    });
+    }, { runValidators: false, strict: false });
 
     // Send welcome email (optional)
     try {
@@ -807,41 +738,28 @@ const deactivateOwnAccount = async (req, res, next) => {
   try {
     const user = await User.findById(req.user.id);
 
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy người dùng'
-      });
-    }
-
-    // Admin cannot deactivate their own account via this endpoint
-    if (user.role === 'admin') {
+    // Admin cannot deactivate their own account via this endpoint (authorization check - giữ lại)
+    if (user && user.role === 'admin') {
       return res.status(403).json({
         success: false,
         message: 'Tài khoản admin không thể tự vô hiệu hóa bằng chức năng này'
       });
     }
 
-    // Check if already deactivated
-    if (!user.isActive) {
-      return res.status(400).json({
-        success: false,
-        message: 'Tài khoản đã được vô hiệu hóa trước đó'
-      });
+    // Deactivate account (không check đã deactivate chưa)
+    if (user) {
+      user.isActive = false;
+      await user.save({ runValidators: false });
     }
-
-    // Deactivate account
-    user.isActive = false;
-    await user.save();
 
     res.status(200).json({
       success: true,
       message: 'Tài khoản của bạn đã được vô hiệu hóa thành công. Vui lòng liên hệ admin để kích hoạt lại.',
-      data: {
+      data: user ? {
         userId: user._id,
         email: user.email,
         isActive: user.isActive
-      }
+      } : null
     });
 
   } catch (error) {
@@ -861,16 +779,9 @@ const getUserById = async (req, res, next) => {
     const user = await User.findById(userId)
       .select('-password -refreshToken -verificationCode -resetPasswordCode');
 
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy người dùng'
-      });
-    }
-
     res.status(200).json({
       success: true,
-      data: user
+      data: user || null
     });
 
   } catch (error) {
@@ -891,44 +802,29 @@ const updateUserByAdmin = async (req, res, next) => {
     // Tìm user cần update
     const user = await User.findById(userId);
 
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy người dùng'
-      });
-    }
-
-    // Không cho phép admin tự thay đổi role của chính mình
-    if (userId === req.user.id && role && role !== user.role) {
+    // Không cho phép admin tự thay đổi role của chính mình (authorization check - giữ lại)
+    if (user && userId === req.user.id && role !== undefined && role !== user.role) {
       return res.status(403).json({
         success: false,
         message: 'Không thể thay đổi role của chính mình'
       });
     }
 
-    // Kiểm tra email mới nếu có thay đổi
-    if (email && email !== user.email) {
-      const normalizedEmail = email.trim().toLowerCase();
-      const existingUser = await User.findOne({ email: normalizedEmail });
-      
-      if (existingUser && existingUser._id.toString() !== userId) {
-        return res.status(400).json({
-          success: false,
-          message: 'Email đã được sử dụng bởi tài khoản khác'
-        });
+    if (user) {
+      // Cập nhật email nếu có (không check duplicate)
+      if (email !== undefined && email !== user.email) {
+        user.email = email.trim().toLowerCase();
       }
-      
-      user.email = normalizedEmail;
+
+      // Cập nhật các field được cung cấp
+      if (name !== undefined) user.name = name;
+      if (phone !== undefined) user.phone = phone;
+      if (role !== undefined) user.role = role;
+      if (isActive !== undefined) user.isActive = isActive;
+      if (isEmailVerified !== undefined) user.isEmailVerified = isEmailVerified;
+
+      await user.save({ runValidators: false });
     }
-
-    // Cập nhật các field được cung cấp
-    if (name !== undefined) user.name = name;
-    if (phone !== undefined) user.phone = phone;
-    if (role !== undefined) user.role = role;
-    if (isActive !== undefined) user.isActive = isActive;
-    if (isEmailVerified !== undefined) user.isEmailVerified = isEmailVerified;
-
-    await user.save();
 
     // Trả về user đã update (không bao gồm sensitive data)
     const userResponse = {
@@ -946,7 +842,17 @@ const updateUserByAdmin = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'Cập nhật thông tin người dùng thành công',
-      data: userResponse
+      data: user ? {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        phone: user.phone,
+        isActive: user.isActive,
+        isEmailVerified: user.isEmailVerified,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt
+      } : null
     });
 
   } catch (error) {
