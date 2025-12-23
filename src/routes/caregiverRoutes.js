@@ -380,35 +380,68 @@ router.put('/profile/:id/status', protect, authorize(ROLES.ADMIN), updateProfile
  * @swagger
  * /api/caregivers/search:
  *   post:
- *     summary: Search caregivers with AI or manual filters
+ *     summary: Tìm kiếm caregivers bằng AI scoring (location bắt buộc, các field khác optional)
  *     tags: [Caregiver]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
+ *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
  *             properties:
- *               query:
+ *               elderlyId:
  *                 type: string
- *                 description: Natural language query for AI search
- *               filters:
+ *               location:
+ *                 type: object
+ *                 required: [address]
+ *                 properties:
+ *                   address:
+ *                     type: string
+ *                   coordinates:
+ *                     type: array
+ *                     items:
+ *                       type: number
+ *                   district:
+ *                     type: string
+ *               packageId:
+ *                 type: string
+ *               skills:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *               requiredCertificates:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *               preferredCertificates:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *               preferredGender:
+ *                 type: string
+ *                 enum: [male, female]
+ *               minExperience:
+ *                 type: number
+ *               maxDistance:
+ *                 type: number
+ *               override:
  *                 type: object
  *                 properties:
- *                   skills:
+ *                   healthConditions:
  *                     type: array
  *                     items:
  *                       type: string
- *                   location:
+ *                   personality:
  *                     type: string
- *                   minRating:
- *                     type: number
- *                   packageType:
+ *                   specialNeeds:
  *                     type: string
  *     responses:
  *       200:
  *         description: Search results
  */
-router.post('/search', searchCaregivers);
+router.post('/search', protect, authorize(ROLES.CARESEEKER), searchCaregivers);
 
 /**
  * @swagger

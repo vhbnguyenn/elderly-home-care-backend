@@ -9,7 +9,9 @@ const {
   updateTaskStatus,
   createBooking,
   checkInBooking,
-  getCheckInInfo
+  getCheckInInfo,
+  createBookingNote,
+  getBookingNotes
 } = require('../controllers/bookingController');
 const { protect, authorize } = require('../middlewares/auth');
 const { uploadSingle } = require('../middlewares/upload');
@@ -411,6 +413,145 @@ router.post('/', protect, authorize(ROLES.CARESEEKER), createBooking);
  *         description: Booking not found
  */
 router.post('/:id/checkin', protect, authorize(ROLES.CAREGIVER), uploadSingle, checkInBooking);
+
+/**
+ * @swagger
+ * /api/bookings/{id}/notes:
+ *   post:
+ *     summary: Tạo ghi chú mới cho booking (Caregiver only)
+ *     description: Caregiver có thể tạo nhiều ghi chú cho booking của mình. Mỗi booking có thể có nhiều notes riêng biệt.
+ *     tags: [Booking]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Booking ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - content
+ *             properties:
+ *               content:
+ *                 type: string
+ *                 description: Nội dung ghi chú
+ *                 example: "Bệnh nhân cần uống thuốc vào 9h sáng. Nhớ kiểm tra huyết áp trước khi cho uống thuốc."
+ *     responses:
+ *       201:
+ *         description: Note created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Tạo ghi chú thành công"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     _id:
+ *                       type: string
+ *                     booking:
+ *                       type: string
+ *                     caregiver:
+ *                       type: object
+ *                       properties:
+ *                         _id:
+ *                           type: string
+ *                         name:
+ *                           type: string
+ *                         avatar:
+ *                           type: string
+ *                     content:
+ *                       type: string
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *                     updatedAt:
+ *                       type: string
+ *                       format: date-time
+ *       400:
+ *         description: Content is required or empty
+ *       403:
+ *         description: Not authorized - not the caregiver of this booking
+ *       404:
+ *         description: Booking not found
+ *   get:
+ *     summary: Lấy danh sách ghi chú của booking
+ *     description: Caregiver và Careseeker đều có thể xem tất cả các ghi chú của booking. Notes được sắp xếp theo thời gian tạo mới nhất.
+ *     tags: [Booking]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Booking ID
+ *     responses:
+ *       200:
+ *         description: Notes retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     bookingId:
+ *                       type: string
+ *                     notes:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           _id:
+ *                             type: string
+ *                           booking:
+ *                             type: string
+ *                           caregiver:
+ *                             type: object
+ *                             properties:
+ *                               _id:
+ *                                 type: string
+ *                               name:
+ *                                 type: string
+ *                               avatar:
+ *                                 type: string
+ *                           content:
+ *                             type: string
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
+ *                           updatedAt:
+ *                             type: string
+ *                             format: date-time
+ *                     total:
+ *                       type: number
+ *                       example: 5
+ *       403:
+ *         description: Not authorized - not caregiver or careseeker of this booking
+ *       404:
+ *         description: Booking not found
+ */
+router.post('/:id/notes', protect, authorize(ROLES.CAREGIVER), createBookingNote);
+router.get('/:id/notes', protect, getBookingNotes);
 
 /**
  * @swagger

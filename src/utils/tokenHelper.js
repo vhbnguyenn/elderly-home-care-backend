@@ -7,7 +7,7 @@ const verifyAccessToken = (token) => {
   try {
     return jwt.verify(token, process.env.JWT_SECRET);
   } catch (error) {
-    throw new Error('Invalid or expired access token');
+    throw new Error('Access token không hợp lệ hoặc đã hết hạn');
   }
 };
 
@@ -21,7 +21,7 @@ const verifyRefreshToken = (token) => {
       process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET
     );
   } catch (error) {
-    throw new Error('Invalid or expired refresh token');
+    throw new Error('Refresh token không hợp lệ hoặc đã hết hạn');
   }
 };
 

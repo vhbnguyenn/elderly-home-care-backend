@@ -34,15 +34,18 @@ exports.createAvailability = async (req, res, next) => {
       });
     }
 
-    if (!isAllDay && (!timeSlots || timeSlots.length === 0)) {
+    // isAllDay = false: bận cả ngày, không cần timeSlots
+    // isAllDay = true: rảnh cả ngày, không cần timeSlots
+    // isAllDay không set hoặc undefined: cần timeSlots
+    if (isAllDay !== true && isAllDay !== false && (!timeSlots || timeSlots.length === 0)) {
       return res.status(400).json({
         success: false,
         message: 'Vui lòng thêm ít nhất một khung giờ'
       });
     }
 
-    // Validate time slots
-    if (!isAllDay && timeSlots) {
+    // Validate time slots (chỉ validate khi không phải isAllDay = true hoặc false)
+    if (isAllDay !== true && isAllDay !== false && timeSlots) {
       for (const slot of timeSlots) {
         if (!slot.startTime || !slot.endTime) {
           return res.status(400).json({
@@ -164,16 +167,34 @@ exports.getMyScheduleByDate = async (req, res, next) => {
     // Collect all time slots for this date
     const timeSlots = [];
     availableSchedules.forEach(schedule => {
+      // isAllDay = false: bận cả ngày, không thêm timeSlots
+      if (schedule.isAllDay === false) {
+        // Không thêm gì cả (bận cả ngày)
+      }
+      // isAllDay = true: rảnh cả ngày
+      else if (schedule.isAllDay === true) {
+        timeSlots.push({
+          scheduleId: schedule._id,
+          startTime: '00:00',
+          endTime: '23:59',
+          isAllDay: true,
+          isHalfDay: schedule.isHalfDay,
+          notes: schedule.notes
+        });
+      }
+      // Không set isAllDay: thêm timeSlots như bình thường
+      else {
       schedule.timeSlots.forEach(slot => {
         timeSlots.push({
           scheduleId: schedule._id,
           startTime: slot.startTime,
           endTime: slot.endTime,
-          isAllDay: schedule.isAllDay,
+            isAllDay: false,
           isHalfDay: schedule.isHalfDay,
           notes: schedule.notes
         });
       });
+      }
     });
 
     res.json({
@@ -495,9 +516,15 @@ exports.checkAvailability = async (req, res, next) => {
       daysOfWeek: dayOfWeek
     });
 
-    const isAvailable = availabilities.some(avail => {
-      return avail.isAvailableAt(checkDate, startTime, endTime);
-    });
+    // ✅ Nếu không có availability records → tự động coi là rảnh
+    let isAvailable;
+    if (availabilities.length === 0) {
+      isAvailable = true;
+    } else {
+      isAvailable = availabilities.some(avail => {
+        return avail.isAvailableAt(checkDate, startTime, endTime);
+      });
+    }
 
     res.json({
       success: true,
@@ -563,7 +590,7 @@ exports.getCalendar = async (req, res, next) => {
       }
     })
       .populate('careseeker', 'name avatar phone')
-      .populate('elderly', 'name age')
+      .populate('elderlyProfile', 'fullName age')
       .sort('bookingDate');
 
     // Build calendar events
@@ -589,17 +616,36 @@ exports.getCalendar = async (req, res, next) => {
           });
 
           if (!hasException) {
+            // isAllDay = false: bận cả ngày, không thêm events
+            if (avail.isAllDay === false) {
+              // Không thêm gì cả (bận cả ngày)
+            }
+            // isAllDay = true: rảnh cả ngày
+            else if (avail.isAllDay === true) {
+              events.push({
+                type: 'availability',
+                date: new Date(currentDate),
+                startTime: '00:00',
+                endTime: '23:59',
+                isAllDay: true,
+                status: 'available',
+                scheduleId: avail._id
+              });
+            }
+            // Không set isAllDay: thêm events theo timeSlots
+            else {
             avail.timeSlots.forEach(slot => {
               events.push({
                 type: 'availability',
                 date: new Date(currentDate),
                 startTime: slot.startTime,
                 endTime: slot.endTime,
-                isAllDay: avail.isAllDay,
+                  isAllDay: false,
                 status: 'available',
                 scheduleId: avail._id
               });
             });
+            }
           }
         }
       });
@@ -622,9 +668,9 @@ exports.getCalendar = async (req, res, next) => {
           avatar: booking.careseeker.avatar,
           phone: booking.careseeker.phone
         } : null,
-        elderly: booking.elderly ? {
-          name: booking.elderly.name,
-          age: booking.elderly.age
+        elderly: booking.elderlyProfile ? {
+          name: booking.elderlyProfile.fullName,
+          age: booking.elderlyProfile.age
         } : null,
         totalPrice: booking.totalPrice,
         workLocation: booking.workLocation
