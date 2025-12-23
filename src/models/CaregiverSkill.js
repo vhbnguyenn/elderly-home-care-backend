@@ -3,12 +3,10 @@ const mongoose = require('mongoose');
 const caregiverSkillSchema = new mongoose.Schema({
   caregiver: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+    ref: 'User'
   },
   name: {
     type: String,
-    required: [true, 'Tên kỹ năng là bắt buộc'],
     trim: true
   },
   description: {
@@ -17,18 +15,7 @@ const caregiverSkillSchema = new mongoose.Schema({
   },
   icon: {
     type: String,
-    enum: [
-      'medication', 'vital-signs', 'emergency', 'nutrition', 'exercise',
-      'cognitive', 'bathing', 'wound-care', 'communication', 'first-aid',
-      'stethoscope', 'injection', 'medical-bag', 'thermometer', 'heartbeat',
-      'compassion', 'plant', 'flower', 'custom'
-    ],
     default: 'medication'
-  },
-  isCustom: {
-    type: Boolean,
-    default: false,
-    description: 'Kỹ năng tự tạo hay chọn từ danh sách có sẵn'
   },
   isDisplayedOnProfile: {
     type: Boolean,
