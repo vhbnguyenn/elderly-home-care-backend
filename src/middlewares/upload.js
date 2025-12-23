@@ -51,6 +51,15 @@ const uploadSingle = upload.single('verificationImage');
 const uploadElderlyAvatar = upload.single('avatar');
 
 // Middleware wrapper để chỉ upload khi là multipart/form-data
+const uploadCaregiverProfileOptional = (req, res, next) => {
+  // Chỉ chạy multer nếu content-type là multipart/form-data
+  if (req.headers['content-type'] && req.headers['content-type'].includes('multipart/form-data')) {
+    return uploadCaregiverProfile(req, res, next);
+  }
+  // Nếu không phải multipart, bỏ qua và tiếp tục
+  next();
+};
+
 const uploadElderlyAvatarOptional = (req, res, next) => {
   // Chỉ chạy multer nếu content-type là multipart/form-data
   if (req.headers['content-type'] && req.headers['content-type'].includes('multipart/form-data')) {
@@ -63,6 +72,7 @@ const uploadElderlyAvatarOptional = (req, res, next) => {
 module.exports = {
   upload,
   uploadCaregiverProfile,
+  uploadCaregiverProfileOptional,
   uploadSingle,
   uploadElderlyAvatar,
   uploadElderlyAvatarOptional
