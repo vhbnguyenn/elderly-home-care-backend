@@ -149,15 +149,8 @@ const getTransactions = async (req, res, next) => {
     let wallet = await Wallet.findOne({ caregiver: req.user._id });
 
     if (!wallet) {
-      return res.status(200).json({
-        success: true,
-        data: {
-          transactions: [],
-          totalPages: 0,
-          currentPage: 1,
-          total: 0
-        }
-      });
+      wallet = new Wallet({ caregiver: req.user._id });
+      await wallet.save();
     }
 
     let transactions = wallet.transactions;
@@ -167,31 +160,94 @@ const getTransactions = async (req, res, next) => {
       transactions = transactions.filter(t => t.type === type);
     }
 
-    // Sort by newest first
-    transactions.sort((a, b) => b.createdAt - a.createdAt);
+    // Lấy các booking đang đợi 24h (pending transactions)
+    const now = new Date();
+    const pendingBookings = await Booking.find({
+      caregiver: req.user._id,
+      status: 'completed',
+      'payment.status': { $in: ['paid', 'completed'] },
+      'payment.transferredToCaregiver': { $ne: true }
+    })
+      .populate('careseeker', 'name email')
+      .sort('-bookingDate');
+
+    // Tạo pending transactions từ bookings
+    const pendingTransactions = pendingBookings.map(booking => {
+      // Dùng paidAt nếu có, nếu không dùng updatedAt hoặc createdAt
+      const paidAtDate = booking.payment?.paidAt 
+        ? new Date(booking.payment.paidAt)
+        : (booking.updatedAt ? new Date(booking.updatedAt) : new Date(booking.createdAt));
+      
+      const paidAt = paidAtDate;
+      const twentyFourHoursLater = new Date(paidAt.getTime() + 24 * 60 * 60 * 1000);
+      const timeRemaining = Math.max(0, twentyFourHoursLater - now);
+      const hoursRemaining = Math.ceil(timeRemaining / (1000 * 60 * 60));
+      
+      const grossAmount = booking.totalPrice;
+      const platformFee = Math.round(grossAmount * (PLATFORM_FEE_PERCENTAGE / 100));
+      const netAmount = grossAmount - platformFee;
+
+      return {
+        _id: booking._id, // Dùng booking._id làm ID tạm
+        booking: booking, // Đã populated booking với careseeker
+        type: 'earning',
+        amount: grossAmount,
+        description: `Thu nhập từ booking ${booking._id} (đang chờ 24h)`,
+        status: 'pending',
+        processedAt: null,
+        hoursRemaining: hoursRemaining,
+        willProcessAt: twentyFourHoursLater,
+        netAmount: netAmount,
+        platformFee: platformFee,
+        createdAt: paidAt,
+        updatedAt: paidAt,
+        isPending: true // Flag để phân biệt pending transaction
+      };
+    });
+
+    // Kết hợp transactions và pending transactions
+    let allTransactions = [...transactions, ...pendingTransactions];
+
+    // Sort by newest first (theo createdAt hoặc paidAt)
+    allTransactions.sort((a, b) => {
+      const dateA = a.createdAt || a.booking?.payment?.paidAt || new Date(0);
+      const dateB = b.createdAt || b.booking?.payment?.paidAt || new Date(0);
+      return new Date(dateB) - new Date(dateA);
+    });
+
+    // Filter by type again (sau khi thêm pending)
+    if (type) {
+      allTransactions = allTransactions.filter(t => t.type === type);
+    }
 
     // Pagination
     const startIndex = (page - 1) * limit;
     const endIndex = page * limit;
-    const paginatedTransactions = transactions.slice(startIndex, endIndex);
+    const paginatedTransactions = allTransactions.slice(startIndex, endIndex);
 
-    // Populate booking details
-    await Wallet.populate(paginatedTransactions, {
-      path: 'booking',
-      select: 'bookingDate bookingTime totalPrice status careseeker',
-      populate: {
-        path: 'careseeker',
-        select: 'name email'
-      }
-    });
+    // Populate booking details cho completed transactions (chưa có booking populated)
+    const transactionsToPopulate = paginatedTransactions.filter(t => 
+      !t.isPending && t.booking && (typeof t.booking === 'string' || (typeof t.booking === 'object' && !t.booking.careseeker))
+    );
+    
+    if (transactionsToPopulate.length > 0) {
+      await Wallet.populate(transactionsToPopulate, {
+        path: 'booking',
+        select: 'bookingDate bookingTime totalPrice status careseeker',
+        populate: {
+          path: 'careseeker',
+          select: 'name email'
+        }
+      });
+    }
 
     res.status(200).json({
       success: true,
       data: {
         transactions: paginatedTransactions,
-        totalPages: Math.ceil(transactions.length / limit),
+        totalPages: Math.ceil(allTransactions.length / limit),
         currentPage: Number(page),
-        total: transactions.length,
+        total: allTransactions.length,
         platformFeePercentage: PLATFORM_FEE_PERCENTAGE
       }
     });

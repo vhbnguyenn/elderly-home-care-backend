@@ -2,6 +2,7 @@ const CaregiverAvailability = require('../models/CaregiverAvailability');
 const User = require('../models/User');
 const Booking = require('../models/Booking');
 const { ROLES } = require('../constants');
+const mongoose = require('mongoose');
 
 // @desc    Create/Update availability schedule
 // @route   POST /api/caregiver-availability
@@ -19,50 +20,6 @@ exports.createAvailability = async (req, res, next) => {
       notes
     } = req.body;
 
-    // Validate required fields
-    if (!startDate) {
-      return res.status(400).json({
-        success: false,
-        message: 'Vui lòng chọn ngày bắt đầu'
-      });
-    }
-
-    if (recurrenceType === 'weekly' && (!daysOfWeek || daysOfWeek.length === 0)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Vui lòng chọn ít nhất một ngày trong tuần'
-      });
-    }
-
-    // isAllDay = false: bận cả ngày, không cần timeSlots
-    // isAllDay = true: rảnh cả ngày, không cần timeSlots
-    // isAllDay không set hoặc undefined: cần timeSlots
-    if (isAllDay !== true && isAllDay !== false && (!timeSlots || timeSlots.length === 0)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Vui lòng thêm ít nhất một khung giờ'
-      });
-    }
-
-    // Validate time slots (chỉ validate khi không phải isAllDay = true hoặc false)
-    if (isAllDay !== true && isAllDay !== false && timeSlots) {
-      for (const slot of timeSlots) {
-        if (!slot.startTime || !slot.endTime) {
-          return res.status(400).json({
-            success: false,
-            message: 'Vui lòng điền đầy đủ thời gian cho mỗi khung giờ'
-          });
-        }
-
-        if (slot.startTime >= slot.endTime) {
-          return res.status(400).json({
-            success: false,
-            message: 'Giờ kết thúc phải sau giờ bắt đầu'
-          });
-        }
-      }
-    }
-
     // Create availability
     const availability = await CaregiverAvailability.create({
       caregiver: req.user._id,
@@ -71,17 +28,19 @@ exports.createAvailability = async (req, res, next) => {
       timeSlots: timeSlots || [],
       isAllDay,
       isHalfDay,
-      startDate: new Date(startDate),
+      startDate: startDate ? new Date(startDate) : new Date(),
       endDate: endDate ? new Date(endDate) : null,
       notes: notes || ''
-    });
+    }, { runValidators: false, strict: false });
 
-    await availability.populate('caregiver', 'name email avatar');
+    // Populate caregiver sau khi tạo
+    const populatedAvailability = await CaregiverAvailability.findById(availability._id)
+      .populate('caregiver', 'name email avatar');
 
     res.status(201).json({
       success: true,
       message: 'Lịch rảnh đã được lưu thành công',
-      data: availability
+      data: populatedAvailability || availability
     });
   } catch (error) {
     next(error);
@@ -93,119 +52,12 @@ exports.createAvailability = async (req, res, next) => {
 // @access  Private (Caregiver only)
 exports.getMySchedules = async (req, res, next) => {
   try {
-    const { isActive, startDate, endDate } = req.query;
-
-    const query = { caregiver: req.user._id };
-    
-    if (isActive !== undefined) {
-      query.isActive = isActive === 'true';
-    }
-
-    if (startDate && endDate) {
-      query.$or = [
-        {
-          startDate: { $lte: new Date(endDate) },
-          $or: [
-            { endDate: null },
-            { endDate: { $gte: new Date(startDate) } }
-          ]
-        }
-      ];
-    }
-
-    const schedules = await CaregiverAvailability.find(query)
+    const schedules = await CaregiverAvailability.find({ caregiver: req.user._id })
       .sort('-createdAt');
 
     res.json({
       success: true,
       data: schedules
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Get my schedule for a specific date (for UI calendar view)
-// @route   GET /api/caregiver-availability/my-schedule-by-date
-// @access  Private (Caregiver only)
-exports.getMyScheduleByDate = async (req, res, next) => {
-  try {
-    const { date } = req.query;
-
-    if (!date) {
-      return res.status(400).json({
-        success: false,
-        message: 'Vui lòng chọn ngày'
-      });
-    }
-
-    const checkDate = new Date(date);
-    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-    const dayOfWeek = dayNames[checkDate.getDay()];
-
-    // Tìm tất cả schedules active cho ngày này
-    const schedules = await CaregiverAvailability.find({
-      caregiver: req.user._id,
-      isActive: true,
-      startDate: { $lte: checkDate },
-      $or: [
-        { endDate: null },
-        { endDate: { $gte: checkDate } }
-      ],
-      daysOfWeek: dayOfWeek
-    });
-
-    // Filter out exceptions (ngày nghỉ)
-    const availableSchedules = schedules.filter(schedule => {
-      const hasException = schedule.exceptions.some(exc => {
-        const excDate = new Date(exc.date);
-        return excDate.toDateString() === checkDate.toDateString();
-      });
-      return !hasException;
-    });
-
-    // Collect all time slots for this date
-    const timeSlots = [];
-    availableSchedules.forEach(schedule => {
-      // isAllDay = false: bận cả ngày, không thêm timeSlots
-      if (schedule.isAllDay === false) {
-        // Không thêm gì cả (bận cả ngày)
-      }
-      // isAllDay = true: rảnh cả ngày
-      else if (schedule.isAllDay === true) {
-        timeSlots.push({
-          scheduleId: schedule._id,
-          startTime: '00:00',
-          endTime: '23:59',
-          isAllDay: true,
-          isHalfDay: schedule.isHalfDay,
-          notes: schedule.notes
-        });
-      }
-      // Không set isAllDay: thêm timeSlots như bình thường
-      else {
-      schedule.timeSlots.forEach(slot => {
-        timeSlots.push({
-          scheduleId: schedule._id,
-          startTime: slot.startTime,
-          endTime: slot.endTime,
-            isAllDay: false,
-          isHalfDay: schedule.isHalfDay,
-          notes: schedule.notes
-        });
-      });
-      }
-    });
-
-    res.json({
-      success: true,
-      data: {
-        date: checkDate,
-        dayOfWeek,
-        hasSchedule: timeSlots.length > 0,
-        timeSlots,
-        schedules: availableSchedules
-      }
     });
   } catch (error) {
     next(error);
@@ -222,225 +74,18 @@ exports.getAvailabilityById = async (req, res, next) => {
     const availability = await CaregiverAvailability.findById(id)
       .populate('caregiver', 'name email avatar phone');
 
-    if (!availability) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy lịch rảnh'
-      });
-    }
-
-    // Check permission
-    const isOwner = availability.caregiver._id.toString() === req.user._id.toString();
-    const isAdmin = req.user.role === ROLES.ADMIN;
-
-    if (!isOwner && !isAdmin && req.user.role !== ROLES.CARE_SEEKER) {
-      return res.status(403).json({
-        success: false,
-        message: 'Bạn không có quyền xem lịch rảnh này'
-      });
-    }
-
     res.json({
       success: true,
-      data: availability
+      data: availability || null
     });
   } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Update availability
-// @route   PUT /api/caregiver-availability/:id
-// @access  Private (Caregiver only - owner)
-exports.updateAvailability = async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const {
-      recurrenceType,
-      daysOfWeek,
-      timeSlots,
-      isAllDay,
-      isHalfDay,
-      startDate,
-      endDate,
-      notes,
-      isActive
-    } = req.body;
-
-    const availability = await CaregiverAvailability.findById(id);
-
-    if (!availability) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy lịch rảnh'
+    // Nếu lỗi CastError (id không hợp lệ) → trả về null
+    if (error.name === 'CastError') {
+      return res.json({
+        success: true,
+        data: null
       });
     }
-
-    // Check ownership
-    if (availability.caregiver.toString() !== req.user._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'Bạn không có quyền chỉnh sửa lịch rảnh này'
-      });
-    }
-
-    // Update fields
-    if (recurrenceType) availability.recurrenceType = recurrenceType;
-    if (daysOfWeek) availability.daysOfWeek = daysOfWeek;
-    if (timeSlots) availability.timeSlots = timeSlots;
-    if (isAllDay !== undefined) availability.isAllDay = isAllDay;
-    if (isHalfDay !== undefined) availability.isHalfDay = isHalfDay;
-    if (startDate) availability.startDate = new Date(startDate);
-    if (endDate !== undefined) availability.endDate = endDate ? new Date(endDate) : null;
-    if (notes !== undefined) availability.notes = notes;
-    if (isActive !== undefined) availability.isActive = isActive;
-
-    await availability.save();
-    await availability.populate('caregiver', 'name email avatar');
-
-    res.json({
-      success: true,
-      message: 'Cập nhật lịch rảnh thành công',
-      data: availability
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Delete availability
-// @route   DELETE /api/caregiver-availability/:id
-// @access  Private (Caregiver only - owner)
-exports.deleteAvailability = async (req, res, next) => {
-  try {
-    const { id } = req.params;
-
-    const availability = await CaregiverAvailability.findById(id);
-
-    if (!availability) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy lịch rảnh'
-      });
-    }
-
-    // Check ownership
-    if (availability.caregiver.toString() !== req.user._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'Bạn không có quyền xóa lịch rảnh này'
-      });
-    }
-
-    await availability.deleteOne();
-
-    res.json({
-      success: true,
-      message: 'Xóa lịch rảnh thành công'
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Add exception date (ngày nghỉ đột xuất)
-// @route   POST /api/caregiver-availability/:id/exceptions
-// @access  Private (Caregiver only - owner)
-exports.addException = async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const { date, reason } = req.body;
-
-    if (!date) {
-      return res.status(400).json({
-        success: false,
-        message: 'Vui lòng chọn ngày nghỉ'
-      });
-    }
-
-    const availability = await CaregiverAvailability.findById(id);
-
-    if (!availability) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy lịch rảnh'
-      });
-    }
-
-    // Check ownership
-    if (availability.caregiver.toString() !== req.user._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'Bạn không có quyền thêm ngày nghỉ'
-      });
-    }
-
-    // Check if exception already exists
-    const exceptionDate = new Date(date);
-    const exists = availability.exceptions.some(exc => {
-      return new Date(exc.date).toDateString() === exceptionDate.toDateString();
-    });
-
-    if (exists) {
-      return res.status(400).json({
-        success: false,
-        message: 'Ngày nghỉ này đã tồn tại'
-      });
-    }
-
-    availability.exceptions.push({
-      date: exceptionDate,
-      reason: reason || 'Bận việc đột xuất'
-    });
-
-    await availability.save();
-
-    res.json({
-      success: true,
-      message: 'Thêm ngày nghỉ thành công',
-      data: availability
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Remove exception date
-// @route   DELETE /api/caregiver-availability/:id/exceptions/:exceptionId
-// @access  Private (Caregiver only - owner)
-exports.removeException = async (req, res, next) => {
-  try {
-    const { id, exceptionId } = req.params;
-
-    const availability = await CaregiverAvailability.findById(id);
-
-    if (!availability) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy lịch rảnh'
-      });
-    }
-
-    // Check ownership
-    if (availability.caregiver.toString() !== req.user._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'Bạn không có quyền xóa ngày nghỉ'
-      });
-    }
-
-    availability.exceptions = availability.exceptions.filter(
-      exc => exc._id.toString() !== exceptionId
-    );
-
-    await availability.save();
-
-    res.json({
-      success: true,
-      message: 'Xóa ngày nghỉ thành công',
-      data: availability
-    });
-  } catch (error) {
     next(error);
   }
 };
@@ -453,29 +98,114 @@ exports.getCaregiverSchedule = async (req, res, next) => {
     const { caregiverId } = req.params;
     const { startDate, endDate } = req.query;
 
-    // Validate caregiver exists
-    const caregiver = await User.findById(caregiverId);
-    if (!caregiver || caregiver.role !== ROLES.CAREGIVER) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy caregiver'
-      });
+    // Convert caregiverId to ObjectId nếu cần
+    let caregiverObjectId = caregiverId;
+    try {
+      if (mongoose.Types.ObjectId.isValid(caregiverId)) {
+        caregiverObjectId = new mongoose.Types.ObjectId(caregiverId);
+      }
+    } catch (e) {
+      // Ignore conversion error
     }
+
+    const caregiver = await User.findById(caregiverObjectId);
 
     const start = startDate ? new Date(startDate) : new Date();
     const end = endDate ? new Date(endDate) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // Default 30 days
 
-    const schedules = await CaregiverAvailability.getSchedule(caregiverId, start, end);
+    // Get all availability schedules (không filter isActive)
+    const availabilities = await CaregiverAvailability.find({
+      caregiver: caregiverObjectId
+    }).sort('startDate');
+
+    // Build availability slots for each day
+    const availabilitySlots = [];
+    const currentDate = new Date(start);
+    
+    while (currentDate <= end) {
+      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      const dayOfWeek = dayNames[currentDate.getDay()];
+      const daySlots = [];
+
+      availabilities.forEach(avail => {
+        // Check if this availability applies to this date
+        const availStartDate = avail.startDate ? new Date(avail.startDate) : null;
+        const availEndDate = avail.endDate ? new Date(avail.endDate) : null;
+        
+        // Normalize dates to compare only date part (ignore time)
+        const currentDateOnly = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
+        const availStartDateOnly = availStartDate ? new Date(availStartDate.getFullYear(), availStartDate.getMonth(), availStartDate.getDate()) : null;
+        const availEndDateOnly = availEndDate ? new Date(availEndDate.getFullYear(), availEndDate.getMonth(), availEndDate.getDate()) : null;
+        
+        // Check date range
+        const inDateRange = !availStartDateOnly || (currentDateOnly >= availStartDateOnly && (!availEndDateOnly || currentDateOnly <= availEndDateOnly));
+        
+        // Check day of week match
+        const dayMatches = avail.recurrenceType === 'daily' || 
+                          !avail.daysOfWeek || 
+                          avail.daysOfWeek.length === 0 || 
+                          avail.daysOfWeek.includes(dayOfWeek);
+        
+        if (inDateRange && dayMatches) {
+          // Check exceptions
+          const hasException = avail.exceptions && avail.exceptions.some(exc => {
+            if (!exc.date) return false;
+            const excDate = new Date(exc.date);
+            return excDate.toDateString() === currentDate.toDateString();
+          });
+
+          if (!hasException) {
+            // isAllDay = true: rảnh cả ngày
+            if (avail.isAllDay === true) {
+              daySlots.push({
+                startTime: '00:00',
+                endTime: '23:59',
+                isAllDay: true
+              });
+            }
+            // Có timeSlots: thêm slots
+            else if (avail.timeSlots && avail.timeSlots.length > 0) {
+              avail.timeSlots.forEach(slot => {
+                if (slot.startTime && slot.endTime) {
+                  daySlots.push({
+                    startTime: slot.startTime,
+                    endTime: slot.endTime,
+                    isAllDay: false
+                  });
+                }
+              });
+            }
+            // isAllDay undefined/null và không có timeSlots: coi như rảnh cả ngày
+            else if (avail.isAllDay === undefined || avail.isAllDay === null) {
+              daySlots.push({
+                startTime: '00:00',
+                endTime: '23:59',
+                isAllDay: true
+              });
+            }
+          }
+        }
+      });
+
+      if (daySlots.length > 0) {
+        availabilitySlots.push({
+          date: new Date(currentDate),
+          slots: daySlots
+        });
+      }
+
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
 
     res.json({
       success: true,
       data: {
-        caregiver: {
+        caregiver: caregiver ? {
           _id: caregiver._id,
           name: caregiver.name,
           avatar: caregiver.avatar
-        },
-        schedules,
+        } : null,
+        availabilitySlots,
         dateRange: {
           start,
           end
@@ -487,107 +217,33 @@ exports.getCaregiverSchedule = async (req, res, next) => {
   }
 };
 
-// @desc    Check if caregiver is available at specific time
-// @route   POST /api/caregiver-availability/check-availability
-// @access  Private
-exports.checkAvailability = async (req, res, next) => {
-  try {
-    const { caregiverId, date, startTime, endTime } = req.body;
-
-    if (!caregiverId || !date || !startTime || !endTime) {
-      return res.status(400).json({
-        success: false,
-        message: 'Vui lòng điền đầy đủ thông tin'
-      });
-    }
-
-    const checkDate = new Date(date);
-    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-    const dayOfWeek = dayNames[checkDate.getDay()];
-
-    const availabilities = await CaregiverAvailability.find({
-      caregiver: caregiverId,
-      isActive: true,
-      startDate: { $lte: checkDate },
-      $or: [
-        { endDate: null },
-        { endDate: { $gte: checkDate } }
-      ],
-      daysOfWeek: dayOfWeek
-    });
-
-    // ✅ Nếu không có availability records → tự động coi là rảnh
-    let isAvailable;
-    if (availabilities.length === 0) {
-      isAvailable = true;
-    } else {
-      isAvailable = availabilities.some(avail => {
-        return avail.isAvailableAt(checkDate, startTime, endTime);
-      });
-    }
-
-    res.json({
-      success: true,
-      data: {
-        isAvailable,
-        matchingSchedules: isAvailable ? availabilities : []
-      }
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
 // @desc    Get calendar view (availability + bookings) for caregiver
-// @route   GET /api/caregiver-availability/calendar/:caregiverId
-// @access  Private (Caregiver owner & Careseeker can view)
+// @route   GET /api/caregiver-availability/calendar
+// @access  Private (Caregiver only - own calendar)
 exports.getCalendar = async (req, res, next) => {
   try {
-    const { caregiverId } = req.params;
+    // Caregiver xem calendar của chính mình
+    const caregiverId = req.user._id.toString();
     const { startDate, endDate } = req.query;
 
-    // Validate caregiver exists
     const caregiver = await User.findById(caregiverId);
-    if (!caregiver || caregiver.role !== ROLES.CAREGIVER) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy caregiver'
-      });
-    }
-
-    // Check permission
-    const isOwner = caregiverId === req.user._id.toString();
-    const isCareseeker = req.user.role === ROLES.CARE_SEEKER;
-    const isAdmin = req.user.role === ROLES.ADMIN;
-
-    if (!isOwner && !isCareseeker && !isAdmin) {
-      return res.status(403).json({
-        success: false,
-        message: 'Bạn không có quyền xem calendar này'
-      });
-    }
 
     const start = startDate ? new Date(startDate) : new Date();
     const end = endDate ? new Date(endDate) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // Default 30 days
 
     // Get availability schedules
     const availabilities = await CaregiverAvailability.find({
-      caregiver: caregiverId,
-      isActive: true,
-      startDate: { $lte: end },
-      $or: [
-        { endDate: null },
-        { endDate: { $gte: start } }
-      ]
+      caregiver: caregiverId
     }).sort('startDate');
 
     // Get bookings in date range
+    // Convert caregiverId to ObjectId nếu cần
+    const caregiverObjectId = mongoose.Types.ObjectId.isValid(caregiverId) 
+      ? new mongoose.Types.ObjectId(caregiverId) 
+      : caregiverId;
+    
     const bookings = await Booking.find({
-      caregiver: caregiverId,
-      bookingDate: {
-        $gte: start,
-        $lte: end
-      }
+      caregiver: caregiverObjectId
     })
       .populate('careseeker', 'name avatar phone')
       .populate('elderlyProfile', 'fullName age')
@@ -604,24 +260,30 @@ exports.getCalendar = async (req, res, next) => {
 
       availabilities.forEach(avail => {
         // Check if this availability applies to this date
-        if (
-          currentDate >= avail.startDate &&
-          (!avail.endDate || currentDate <= avail.endDate) &&
-          (avail.recurrenceType === 'daily' || avail.daysOfWeek.includes(dayOfWeek))
-        ) {
+        const availStartDate = avail.startDate ? new Date(avail.startDate) : null;
+        const availEndDate = avail.endDate ? new Date(avail.endDate) : null;
+        
+        // Check date range - nếu không có startDate thì coi như áp dụng mọi ngày
+        const inDateRange = !availStartDate || (currentDate >= availStartDate && (!availEndDate || currentDate <= availEndDate));
+        
+        // Check day of week match
+        // Nếu recurrenceType là 'daily' hoặc không có daysOfWeek hoặc daysOfWeek empty → match mọi ngày
+        const dayMatches = avail.recurrenceType === 'daily' || 
+                          !avail.daysOfWeek || 
+                          avail.daysOfWeek.length === 0 || 
+                          avail.daysOfWeek.includes(dayOfWeek);
+        
+        if (inDateRange && dayMatches) {
           // Check exceptions
-          const hasException = avail.exceptions.some(exc => {
+          const hasException = avail.exceptions && avail.exceptions.some(exc => {
+            if (!exc.date) return false;
             const excDate = new Date(exc.date);
             return excDate.toDateString() === currentDate.toDateString();
           });
 
           if (!hasException) {
-            // isAllDay = false: bận cả ngày, không thêm events
-            if (avail.isAllDay === false) {
-              // Không thêm gì cả (bận cả ngày)
-            }
             // isAllDay = true: rảnh cả ngày
-            else if (avail.isAllDay === true) {
+            if (avail.isAllDay === true) {
               events.push({
                 type: 'availability',
                 date: new Date(currentDate),
@@ -632,20 +294,36 @@ exports.getCalendar = async (req, res, next) => {
                 scheduleId: avail._id
               });
             }
-            // Không set isAllDay: thêm events theo timeSlots
-            else {
-            avail.timeSlots.forEach(slot => {
+            // Có timeSlots: thêm events theo timeSlots (bất kể isAllDay là gì)
+            else if (avail.timeSlots && avail.timeSlots.length > 0) {
+              avail.timeSlots.forEach(slot => {
+                if (slot.startTime && slot.endTime) {
+                  events.push({
+                    type: 'availability',
+                    date: new Date(currentDate),
+                    startTime: slot.startTime,
+                    endTime: slot.endTime,
+                    isAllDay: false,
+                    status: 'available',
+                    scheduleId: avail._id
+                  });
+                }
+              });
+            }
+            // isAllDay = false và không có timeSlots: bận cả ngày, không thêm events
+            // isAllDay undefined/null và không có timeSlots: coi như rảnh cả ngày (fallback)
+            else if (avail.isAllDay === undefined || avail.isAllDay === null) {
               events.push({
                 type: 'availability',
                 date: new Date(currentDate),
-                startTime: slot.startTime,
-                endTime: slot.endTime,
-                  isAllDay: false,
+                startTime: '00:00',
+                endTime: '23:59',
+                isAllDay: true,
                 status: 'available',
                 scheduleId: avail._id
               });
-            });
             }
+            // isAllDay = false và không có timeSlots: không thêm (bận cả ngày)
           }
         }
       });
@@ -654,6 +332,9 @@ exports.getCalendar = async (req, res, next) => {
     }
 
     // Add bookings as events
+    const isOwner = caregiverId === req.user._id.toString();
+    const isAdmin = req.user.role === ROLES.ADMIN;
+    
     bookings.forEach(booking => {
       events.push({
         type: 'booking',
@@ -687,11 +368,11 @@ exports.getCalendar = async (req, res, next) => {
     res.json({
       success: true,
       data: {
-        caregiver: {
+        caregiver: caregiver ? {
           _id: caregiver._id,
           name: caregiver.name,
           avatar: caregiver.avatar
-        },
+        } : null,
         dateRange: {
           start,
           end
@@ -726,19 +407,15 @@ function calculateEndTime(startTime, durationHours) {
 // @access  Private (Admin only)
 exports.getAllSchedules = async (req, res, next) => {
   try {
-    const { page = 1, limit = 20, caregiverId, isActive } = req.query;
+    const { page = 1, limit = 20 } = req.query;
 
-    const query = {};
-    if (caregiverId) query.caregiver = caregiverId;
-    if (isActive !== undefined) query.isActive = isActive === 'true';
-
-    const schedules = await CaregiverAvailability.find(query)
+    const schedules = await CaregiverAvailability.find({})
       .populate('caregiver', 'name email phone avatar')
       .sort('-createdAt')
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .limit(Number(limit))
+      .skip((Number(page) - 1) * Number(limit));
 
-    const total = await CaregiverAvailability.countDocuments(query);
+    const total = await CaregiverAvailability.countDocuments({});
 
     res.json({
       success: true,

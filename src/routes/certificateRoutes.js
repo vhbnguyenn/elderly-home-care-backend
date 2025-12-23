@@ -33,12 +33,6 @@ const { ROLES } = require('../constants');
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - name
- *               - issueDate
- *               - issuingOrganization
- *               - certificateType
- *               - certificateImage
  *             properties:
  *               name:
  *                 type: string
@@ -47,12 +41,15 @@ const { ROLES } = require('../constants');
  *                 type: string
  *                 format: date
  *                 example: "2023-06-15"
+ *               expirationDate:
+ *                 type: string
+ *                 format: date
+ *                 example: "2025-06-15"
  *               issuingOrganization:
  *                 type: string
  *                 example: "Bộ Y Tế"
  *               certificateType:
  *                 type: string
- *                 enum: [chăm sóc người già, y tá, điều dưỡng, sơ cứu, dinh dưỡng, vật lí trị liệu, khác]
  *                 example: "chăm sóc người già"
  *               certificateImage:
  *                 type: string
@@ -78,7 +75,6 @@ router.post('/', protect, authorize(ROLES.CAREGIVER), createCertificate);
  *         name: status
  *         schema:
  *           type: string
- *           enum: [pending, approved, rejected]
  *     responses:
  *       200:
  *         description: Certificates retrieved successfully
@@ -151,16 +147,24 @@ router.get('/admin/pending', protect, authorize(ROLES.ADMIN), getPendingCertific
  *             properties:
  *               name:
  *                 type: string
+ *                 example: "Chứng chỉ chăm sóc người già"
  *               issueDate:
  *                 type: string
  *                 format: date
+ *                 example: "2023-06-15"
+ *               expirationDate:
+ *                 type: string
+ *                 format: date
+ *                 example: "2025-06-15"
  *               issuingOrganization:
  *                 type: string
+ *                 example: "Bộ Y Tế"
  *               certificateType:
  *                 type: string
- *                 enum: [chăm sóc người già, y tá, điều dưỡng, sơ cứu, dinh dưỡng, vật lí trị liệu, khác]
+ *                 example: "chăm sóc người già"
  *               certificateImage:
  *                 type: string
+ *                 example: "https://cloudinary.com/certificate.jpg"
  *     responses:
  *       200:
  *         description: Certificate updated successfully
@@ -208,12 +212,9 @@ router.route('/:id')
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - status
  *             properties:
  *               status:
  *                 type: string
- *                 enum: [approved, rejected]
  *                 example: "approved"
  *               rejectionReason:
  *                 type: string

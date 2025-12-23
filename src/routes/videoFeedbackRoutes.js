@@ -95,9 +95,9 @@ router.post('/', protect, videoFeedbackController.createFeedback);
 
 /**
  * @swagger
- * /api/video-feedback/my-feedbacks:
+ * /api/video-feedback/admin/all:
  *   get:
- *     summary: Lấy danh sách feedback đã gửi
+ *     summary: Lấy tất cả feedback (Admin only)
  *     tags: [Video Feedback]
  *     security:
  *       - bearerAuth: []
@@ -111,92 +111,38 @@ router.post('/', protect, videoFeedbackController.createFeedback);
  *         name: limit
  *         schema:
  *           type: number
- *           default: 10
+ *           default: 20
  *       - in: query
  *         name: sortBy
  *         schema:
  *           type: string
  *           default: -createdAt
- *     responses:
- *       200:
- *         description: Feedbacks retrieved successfully
- */
-router.get('/my-feedbacks', protect, videoFeedbackController.getMyFeedbacks);
-
-/**
- * @swagger
- * /api/video-feedback/received:
- *   get:
- *     summary: Lấy danh sách feedback nhận được
- *     tags: [Video Feedback]
- *     security:
- *       - bearerAuth: []
- *     parameters:
  *       - in: query
- *         name: page
- *         schema:
- *           type: number
- *           default: 1
- *       - in: query
- *         name: limit
- *         schema:
- *           type: number
- *           default: 10
- *       - in: query
- *         name: sortBy
+ *         name: status
  *         schema:
  *           type: string
- *           default: -createdAt
- *     responses:
- *       200:
- *         description: Feedbacks retrieved successfully
- */
-router.get('/received', protect, videoFeedbackController.getReceivedFeedbacks);
-
-/**
- * @swagger
- * /api/video-feedback/stats:
- *   get:
- *     summary: Lấy thống kê feedback của tôi
- *     tags: [Video Feedback]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Statistics retrieved successfully
- */
-router.get('/stats', protect, videoFeedbackController.getFeedbackStats);
-
-/**
- * @swagger
- * /api/video-feedback/admin/system-stats:
- *   get:
- *     summary: Lấy thống kê hệ thống (Admin only)
- *     tags: [Video Feedback]
- *     security:
- *       - bearerAuth: []
- *     parameters:
+ *           enum: [active, hidden]
  *       - in: query
- *         name: startDate
+ *         name: overallExperience
  *         schema:
  *           type: string
- *           format: date
+ *           enum: [excellent, good, average, poor, very_poor]
  *       - in: query
- *         name: endDate
+ *         name: search
  *         schema:
  *           type: string
- *           format: date
+ *         description: Tìm kiếm theo tên reviewer hoặc receiver
  *     responses:
  *       200:
- *         description: System statistics retrieved successfully
+ *         description: All feedbacks retrieved successfully
  */
-router.get('/admin/system-stats', protect, authorize(ROLES.ADMIN), videoFeedbackController.getSystemStats);
+router.get('/admin/all', protect, authorize(ROLES.ADMIN), videoFeedbackController.getAllFeedbacks);
 
 /**
  * @swagger
  * /api/video-feedback/{id}:
  *   get:
- *     summary: Lấy chi tiết feedback
+ *     summary: Lấy chi tiết feedback (Admin only)
  *     tags: [Video Feedback]
  *     security:
  *       - bearerAuth: []
@@ -210,54 +156,10 @@ router.get('/admin/system-stats', protect, authorize(ROLES.ADMIN), videoFeedback
  *       200:
  *         description: Feedback detail retrieved successfully
  *       403:
- *         description: Forbidden
- *       404:
- *         description: Feedback not found
- *   put:
- *     summary: Cập nhật feedback (chỉ người tạo)
- *     tags: [Video Feedback]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/VideoCallFeedback'
- *     responses:
- *       200:
- *         description: Feedback updated successfully
- *       403:
- *         description: Forbidden - not the owner
- *       404:
- *         description: Feedback not found
- *   delete:
- *     summary: Xóa feedback (người tạo hoặc admin)
- *     tags: [Video Feedback]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Feedback deleted successfully
- *       403:
- *         description: Forbidden
+ *         description: Forbidden - Admin only
  *       404:
  *         description: Feedback not found
  */
-router.get('/:id', protect, videoFeedbackController.getFeedbackDetail);
-router.put('/:id', protect, videoFeedbackController.updateFeedback);
-router.delete('/:id', protect, videoFeedbackController.deleteFeedback);
+router.get('/:id', protect, authorize(ROLES.ADMIN), videoFeedbackController.getFeedbackDetail);
 
 module.exports = router;
