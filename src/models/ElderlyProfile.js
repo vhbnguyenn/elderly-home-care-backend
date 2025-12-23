@@ -70,6 +70,11 @@ const elderlyProfileSchema = new mongoose.Schema(
       type: String,
       trim: true
     },
+    // Avatar người già
+    avatar: {
+      type: String,
+      trim: true
+    },
     // Nhóm máu
     bloodType: {
       type: String,

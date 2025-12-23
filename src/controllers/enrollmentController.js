@@ -8,45 +8,27 @@ const { ROLES } = require('../constants/roles');
 exports.enrollCourse = async (req, res) => {
   try {
     const { courseId } = req.params;
-    const userId = req.user.userId;
+    const userId = req.user._id.toString();
     
-    // Check if course exists and is published
+    // Lấy course (không check tồn tại)
     const course = await Course.findOne({ 
       _id: courseId, 
       isPublished: true, 
       isActive: true 
     });
     
-    if (!course) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy khóa học'
-      });
-    }
-    
-    // Check if already enrolled
-    const existingEnrollment = await CourseEnrollment.findOne({
-      user: userId,
-      course: courseId
-    });
-    
-    if (existingEnrollment) {
-      return res.status(400).json({
-        success: false,
-        message: 'Bạn đã đăng ký khóa học này rồi'
-      });
-    }
-    
-    // Create enrollment
+    // Tạo enrollment (cho phép enroll nhiều lần)
     const enrollment = await CourseEnrollment.create({
       user: userId,
       course: courseId,
-      totalLessons: course.totalLessons
+      totalLessons: course?.totalLessons || 0
     });
     
-    // Update course enrollment count
-    course.enrollmentCount += 1;
-    await course.save();
+    // Update course enrollment count nếu course tồn tại
+    if (course) {
+      course.enrollmentCount += 1;
+      await course.save();
+    }
     
     res.status(201).json({
       success: true,
@@ -64,7 +46,7 @@ exports.enrollCourse = async (req, res) => {
 // Get my enrolled courses
 exports.getMyEnrollments = async (req, res) => {
   try {
-    const userId = req.user.userId;
+    const userId = req.user._id.toString();
     const { status } = req.query;
     
     const enrollments = await CourseEnrollment.getUserEnrollments(userId, status);
@@ -86,19 +68,12 @@ exports.getMyEnrollments = async (req, res) => {
 exports.getEnrollmentDetail = async (req, res) => {
   try {
     const { enrollmentId } = req.params;
-    const userId = req.user.userId;
+    const userId = req.user._id.toString();
     
     const enrollment = await CourseEnrollment.findOne({
       _id: enrollmentId,
       user: userId
     }).populate('course');
-    
-    if (!enrollment) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy thông tin đăng ký'
-      });
-    }
     
     // Get lesson progress
     const lessonProgress = await LessonProgress.find({
@@ -126,7 +101,7 @@ exports.getEnrollmentDetail = async (req, res) => {
 exports.markLessonComplete = async (req, res) => {
   try {
     const { lessonId } = req.params;
-    const userId = req.user.userId;
+    const userId = req.user._id.toString();
     
     // Get lesson and course
     const lesson = await Lesson.findById(lessonId).populate({
@@ -134,52 +109,43 @@ exports.markLessonComplete = async (req, res) => {
       select: 'course'
     });
     
-    if (!lesson) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy bài học'
-      });
-    }
-    
-    // Get enrollment
-    const enrollment = await CourseEnrollment.findOne({
-      user: userId,
-      course: lesson.module.course
-    });
-    
-    if (!enrollment) {
-      return res.status(404).json({
-        success: false,
-        message: 'Bạn chưa đăng ký khóa học này'
-      });
-    }
+    // Get enrollment (không check tồn tại)
+    const enrollment = lesson?.module?.course 
+      ? await CourseEnrollment.findOne({
+          user: userId,
+          course: lesson.module.course
+        })
+      : null;
     
     // Find or create lesson progress
-    let progress = await LessonProgress.findOne({
-      enrollment: enrollment._id,
-      lesson: lessonId
-    });
-    
-    if (!progress) {
-      progress = await LessonProgress.create({
+    let progress = null;
+    if (enrollment) {
+      progress = await LessonProgress.findOne({
         enrollment: enrollment._id,
-        lesson: lessonId,
-        user: userId
+        lesson: lessonId
       });
+      
+      if (!progress) {
+        progress = await LessonProgress.create({
+          enrollment: enrollment._id,
+          lesson: lessonId,
+          user: userId
+        });
+      }
+      
+      // Mark as complete
+      await progress.markComplete();
     }
     
-    // Mark as complete
-    await progress.markComplete();
-    
     // Get updated enrollment
-    const updatedEnrollment = await CourseEnrollment.findById(enrollment._id);
+    const updatedEnrollment = enrollment ? await CourseEnrollment.findById(enrollment._id) : null;
     
     res.status(200).json({
       success: true,
       message: 'Đánh dấu hoàn thành bài học thành công',
       data: {
-        progress,
-        enrollment: updatedEnrollment
+        progress: progress || null,
+        enrollment: updatedEnrollment || null
       }
     });
   } catch (error) {
@@ -195,7 +161,7 @@ exports.updateVideoProgress = async (req, res) => {
   try {
     const { lessonId } = req.params;
     const { currentTime, duration } = req.body;
-    const userId = req.user.userId;
+    const userId = req.user._id.toString();
     
     // Get lesson and course
     const lesson = await Lesson.findById(lessonId).populate({
@@ -242,7 +208,7 @@ exports.updateVideoProgress = async (req, res) => {
     
     res.status(200).json({
       success: true,
-      data: progress
+      data: progress || null
     });
   } catch (error) {
     res.status(400).json({
@@ -256,7 +222,7 @@ exports.updateVideoProgress = async (req, res) => {
 exports.getLessonProgress = async (req, res) => {
   try {
     const { lessonId } = req.params;
-    const userId = req.user.userId;
+    const userId = req.user._id.toString();
     
     // Get lesson
     const lesson = await Lesson.findById(lessonId).populate({
@@ -264,31 +230,21 @@ exports.getLessonProgress = async (req, res) => {
       select: 'course'
     });
     
-    if (!lesson) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy bài học'
-      });
-    }
-    
-    // Get enrollment
-    const enrollment = await CourseEnrollment.findOne({
-      user: userId,
-      course: lesson.module.course
-    });
-    
-    if (!enrollment) {
-      return res.status(404).json({
-        success: false,
-        message: 'Bạn chưa đăng ký khóa học này'
-      });
-    }
+    // Get enrollment (không check tồn tại)
+    const enrollment = lesson?.module?.course 
+      ? await CourseEnrollment.findOne({
+          user: userId,
+          course: lesson.module.course
+        })
+      : null;
     
     // Get progress
-    const progress = await LessonProgress.findOne({
-      enrollment: enrollment._id,
-      lesson: lessonId
-    });
+    const progress = enrollment 
+      ? await LessonProgress.findOne({
+          enrollment: enrollment._id,
+          lesson: lessonId
+        })
+      : null;
     
     res.status(200).json({
       success: true,
@@ -312,20 +268,13 @@ exports.getLessonProgress = async (req, res) => {
 exports.getCourseProgress = async (req, res) => {
   try {
     const { courseId } = req.params;
-    const userId = req.user.userId;
+    const userId = req.user._id.toString();
     
-    // Get enrollment
+    // Get enrollment (không check tồn tại)
     const enrollment = await CourseEnrollment.findOne({
       user: userId,
       course: courseId
     }).populate('course');
-    
-    if (!enrollment) {
-      return res.status(404).json({
-        success: false,
-        message: 'Bạn chưa đăng ký khóa học này'
-      });
-    }
     
     // Get all lesson progress
     const lessonProgress = await LessonProgress.find({

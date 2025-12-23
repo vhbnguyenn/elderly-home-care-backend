@@ -3,26 +3,23 @@ const mongoose = require('mongoose');
 const certificateSchema = new mongoose.Schema({
   name: {
     type: String,
-    required: [true, 'Certificate name is required'],
     trim: true
   },
   issueDate: {
-    type: Date,
-    required: [true, 'Issue date is required']
+    type: Date
+  },
+  expirationDate: {
+    type: Date // Ngày hết hạn (optional - một số chứng chỉ không có ngày hết hạn)
   },
   issuingOrganization: {
     type: String,
-    required: [true, 'Issuing organization is required'],
     trim: true
   },
   certificateType: {
-    type: String,
-    enum: ['chăm sóc người già', 'y tá', 'điều dưỡng', 'sơ cứu', 'dinh dưỡng', 'vật lí trị liệu', 'khác'],
-    required: [true, 'Certificate type is required']
+    type: String
   },
   certificateImage: {
-    type: String, // URL của ảnh
-    required: [true, 'Certificate image is required']
+    type: String // URL của ảnh
   }
 }, { _id: true });
 
@@ -31,27 +28,21 @@ const caregiverProfileSchema = new mongoose.Schema(
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
       unique: true
     },
     // Thông tin cá nhân
     phoneNumber: {
       type: String,
-      required: [true, 'Phone number is required'],
       trim: true
     },
     dateOfBirth: {
-      type: Date,
-      required: [true, 'Date of birth is required']
+      type: Date
     },
     gender: {
-      type: String,
-      enum: ['Nam', 'Nữ'],
-      required: [true, 'Gender is required']
+      type: String
     },
     permanentAddress: {
       type: String,
-      required: [true, 'Permanent address is required'],
       trim: true
     },
     temporaryAddress: {
@@ -65,79 +56,53 @@ const caregiverProfileSchema = new mongoose.Schema(
     },
     idCardNumber: {
       type: String,
-      required: [true, 'ID card number is required'],
       trim: true,
       unique: true
     },
     idCardFrontImage: {
-      type: String, // URL
-      required: [true, 'ID card front image is required']
+      type: String // URL
     },
     idCardBackImage: {
-      type: String, // URL
-      required: [true, 'ID card back image is required']
+      type: String // URL
     },
     
     // Thông tin nghề nghiệp
     yearsOfExperience: {
-      type: Number,
-      required: [true, 'Years of experience is required'],
-      min: 0
+      type: Number
     },
     workHistory: {
       type: String,
-      required: [true, 'Work history is required'],
       trim: true
     },
     education: {
-      type: String,
-      enum: ['trung học cơ sở', 'trung học phổ thông', 'đại học', 'sau đại học'],
-      required: [true, 'Education level is required']
+      type: String
     },
     universityDegreeImage: {
-      type: String, // URL - Chỉ required nếu education là 'đại học' hoặc 'sau đại học'
+      type: String, // URL
       default: null
     },
     certificates: [certificateSchema],
     
     // Hồ sơ bổ sung
     profileImage: {
-      type: String, // URL - Avatar của caregiver
-      required: [true, 'Profile image is required']
+      type: String // URL
     },
     bio: {
       type: String,
-      required: [true, 'Bio is required'],
-      trim: true,
-      maxlength: [1000, 'Bio cannot exceed 1000 characters']
+      trim: true
     },
     
     // Cam kết
     agreeToEthics: {
-      type: Boolean,
-      required: [true, 'Must agree to ethics'],
-      validate: {
-        validator: function(v) {
-          return v === true;
-        },
-        message: 'Must agree to professional ethics'
-      }
+      type: Boolean
     },
     agreeToTerms: {
-      type: Boolean,
-      required: [true, 'Must agree to terms'],
-      validate: {
-        validator: function(v) {
-          return v === true;
-        },
-        message: 'Must agree to terms and conditions'
-      }
+      type: Boolean
     },
     
     // Trạng thái
     profileStatus: {
       type: String,
-      enum: ['pending', 'approved', 'rejected'],
       default: 'pending'
     },
     rejectionReason: {

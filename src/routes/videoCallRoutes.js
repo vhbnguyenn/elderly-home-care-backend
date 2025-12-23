@@ -212,20 +212,6 @@ router.get('/history', protect, videoCallController.getCallHistory);
 
 /**
  * @swagger
- * /api/video-calls/statistics/me:
- *   get:
- *     summary: Lấy thống kê cuộc gọi của tôi
- *     tags: [Video Calls]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Statistics retrieved successfully
- */
-router.get('/statistics/me', protect, videoCallController.getMyStatistics);
-
-/**
- * @swagger
  * /api/video-calls/{id}:
  *   get:
  *     summary: Lấy chi tiết cuộc gọi
@@ -286,47 +272,5 @@ router.get('/:id', protect, videoCallController.getCallDetail);
  *         description: Call not found
  */
 router.post('/:id/signaling', protect, videoCallController.saveSignalingData);
-
-/**
- * @swagger
- * /api/video-calls/admin/all:
- *   get:
- *     summary: Lấy tất cả cuộc gọi (Admin only)
- *     tags: [Video Calls]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: page
- *         schema:
- *           type: number
- *           default: 1
- *       - in: query
- *         name: limit
- *         schema:
- *           type: number
- *           default: 20
- *       - in: query
- *         name: sortBy
- *         schema:
- *           type: string
- *           default: -createdAt
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
- *       - in: query
- *         name: callType
- *         schema:
- *           type: string
- *       - in: query
- *         name: search
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: All calls retrieved successfully with statistics
- */
-router.get('/admin/all', protect, authorize(ROLES.ADMIN), videoCallController.getAllCalls);
 
 module.exports = router;

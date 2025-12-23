@@ -5,37 +5,27 @@ const caregiverAvailabilitySchema = new mongoose.Schema(
     // Caregiver
     caregiver: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: [true, 'Caregiver is required']
+      ref: 'User'
     },
     
     // Loại lặp lại
     recurrenceType: {
       type: String,
-      enum: ['weekly', 'daily', 'once'],
       default: 'weekly'
     },
     
     // Các ngày trong tuần (cho weekly)
     daysOfWeek: [{
-      type: String,
-      enum: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
-      required: function() {
-        return this.recurrenceType === 'weekly';
-      }
+      type: String
     }],
     
     // Khung giờ rảnh trong ngày
     timeSlots: [{
       startTime: {
-        type: String,
-        required: true,
-        match: /^([01]\d|2[0-3]):([0-5]\d)$/ // Format: HH:mm
+        type: String
       },
       endTime: {
-        type: String,
-        required: true,
-        match: /^([01]\d|2[0-3]):([0-5]\d)$/
+        type: String
       }
     }],
     
@@ -53,8 +43,7 @@ const caregiverAvailabilitySchema = new mongoose.Schema(
     
     // Áp dụng từ ngày
     startDate: {
-      type: Date,
-      required: [true, 'Start date is required']
+      type: Date
     },
     
     // Đến ngày (optional - null = không giới hạn)
@@ -72,20 +61,17 @@ const caregiverAvailabilitySchema = new mongoose.Schema(
     // Ghi chú
     notes: {
       type: String,
-      trim: true,
-      maxlength: [500, 'Notes cannot exceed 500 characters']
+      trim: true
     },
     
     // Các ngày ngoại lệ (ngày nghỉ đột xuất)
     exceptions: [{
       date: {
-        type: Date,
-        required: true
+        type: Date
       },
       reason: {
         type: String,
-        trim: true,
-        maxlength: 200
+        trim: true
       },
       createdAt: {
         type: Date,
@@ -103,27 +89,27 @@ caregiverAvailabilitySchema.index({ caregiver: 1, isActive: 1 });
 caregiverAvailabilitySchema.index({ caregiver: 1, startDate: 1, endDate: 1 });
 caregiverAvailabilitySchema.index({ daysOfWeek: 1 });
 
-// Validation: endDate phải sau startDate
-caregiverAvailabilitySchema.pre('save', function(next) {
-  if (this.endDate && this.endDate <= this.startDate) {
-    return next(new Error('End date must be after start date'));
-  }
-  
-  // Nếu isAllDay = true thì không cần timeSlots
-  if (this.isAllDay) {
-    this.timeSlots = [{
-      startTime: '00:00',
-      endTime: '23:59'
-    }];
-  }
-  
-  // Nếu isHalfDay = true thì chỉ 1 time slot
-  if (this.isHalfDay && this.timeSlots.length > 1) {
-    return next(new Error('Half day can only have one time slot'));
-  }
-  
-  next();
-});
+// Bỏ validation pre-save hook
+// caregiverAvailabilitySchema.pre('save', function(next) {
+//   if (this.endDate && this.endDate <= this.startDate) {
+//     return next(new Error('End date must be after start date'));
+//   }
+//   
+//   // Nếu isAllDay = true thì không cần timeSlots
+//   if (this.isAllDay) {
+//     this.timeSlots = [{
+//       startTime: '00:00',
+//       endTime: '23:59'
+//     }];
+//   }
+//   
+//   // Nếu isHalfDay = true thì chỉ 1 time slot
+//   if (this.isHalfDay && this.timeSlots.length > 1) {
+//     return next(new Error('Half day can only have one time slot'));
+//   }
+//   
+//   next();
+// });
 
 // Method: Check if caregiver is available on a specific date and time
 caregiverAvailabilitySchema.methods.isAvailableAt = function(date, startTime, endTime) {

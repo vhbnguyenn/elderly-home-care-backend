@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const courseController = require('../controllers/courseController');
 const enrollmentController = require('../controllers/enrollmentController');
-const { protect, authorize } = require('../middlewares/auth');
+const { protect, authorize, protectOptional } = require('../middlewares/auth');
 const { ROLES } = require('../constants/roles');
 
 /**
@@ -16,8 +16,16 @@ const { ROLES } = require('../constants/roles');
  * @swagger
  * /api/courses:
  *   get:
- *     summary: Lấy danh sách khóa học
+ *     summary: Lấy danh sách khóa học (yêu cầu đăng nhập)
+ *     description: |
+ *       - Yêu cầu đăng nhập (không còn public)
+ *       - Hiển thị tất cả courses (chưa enroll + đã enroll)
+ *       - Mỗi course có thông tin enrollment nếu user đã enroll
+ *       - Admin: Xem tất cả khóa học (kể cả chưa xuất bản)
+ *       - User khác: Chỉ xem các khóa học đã được xuất bản (isPublished: true)
  *     tags: [Courses]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: query
  *         name: level
@@ -34,16 +42,25 @@ const { ROLES } = require('../constants/roles');
  *           type: string
  *     responses:
  *       200:
- *         description: Danh sách khóa học
+ *         description: Danh sách khóa học (có thông tin enrollment nếu đã enroll)
+ *       401:
+ *         description: Chưa đăng nhập
  */
-router.get('/', courseController.getAllCourses);
+router.get('/', protect, courseController.getAllCourses);
 
 /**
  * @swagger
  * /api/courses/{id}:
  *   get:
  *     summary: Lấy chi tiết khóa học (có modules và lessons)
+ *     description: |
+ *       - Yêu cầu đăng nhập (không còn public)
+ *       - Có thông tin enrollment nếu user đã enroll
+ *       - Admin: Xem tất cả khóa học (kể cả chưa xuất bản)
+ *       - User khác: Chỉ xem khóa học đã được xuất bản (isPublished: true)
  *     tags: [Courses]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -52,18 +69,26 @@ router.get('/', courseController.getAllCourses);
  *           type: string
  *     responses:
  *       200:
- *         description: Chi tiết khóa học
+ *         description: Chi tiết khóa học (có thông tin enrollment nếu đã enroll)
+ *       401:
+ *         description: Chưa đăng nhập
  *       404:
  *         description: Không tìm thấy khóa học
  */
-router.get('/:id', courseController.getCourseDetail);
+router.get('/:id', protect, courseController.getCourseDetail);
 
 /**
  * @swagger
  * /api/courses/lesson/{lessonId}:
  *   get:
  *     summary: Lấy chi tiết bài học
+ *     description: |
+ *       - Yêu cầu đăng nhập (không còn public)
+ *       - User khác: Chỉ xem bài học của khóa học đã được xuất bản
+ *       - Admin: Xem tất cả bài học (kể cả của khóa học chưa xuất bản)
  *     tags: [Courses]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: lessonId
@@ -73,8 +98,14 @@ router.get('/:id', courseController.getCourseDetail);
  *     responses:
  *       200:
  *         description: Chi tiết bài học
+ *       401:
+ *         description: Chưa đăng nhập
+ *       403:
+ *         description: Không có quyền xem bài học này
+ *       404:
+ *         description: Không tìm thấy bài học
  */
-router.get('/lesson/:lessonId', courseController.getLessonDetail);
+router.get('/lesson/:lessonId', protect, courseController.getLessonDetail);
 
 /**
  * @swagger
@@ -97,26 +128,6 @@ router.get('/lesson/:lessonId', courseController.getLessonDetail);
  *         description: Đã đăng ký rồi
  */
 router.post('/:courseId/enroll', protect, enrollmentController.enrollCourse);
-
-/**
- * @swagger
- * /api/courses/my-enrollments:
- *   get:
- *     summary: Lấy danh sách khóa học đã đăng ký của tôi
- *     tags: [Courses]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
- *           enum: [active, completed, dropped]
- *     responses:
- *       200:
- *         description: Danh sách khóa học đã đăng ký
- */
-router.get('/my-enrollments', protect, enrollmentController.getMyEnrollments);
 
 /**
  * @swagger
@@ -158,66 +169,14 @@ router.get('/:courseId/progress', protect, enrollmentController.getCourseProgres
  */
 router.post('/lesson/:lessonId/complete', protect, enrollmentController.markLessonComplete);
 
-/**
- * @swagger
- * /api/courses/lesson/{lessonId}/progress:
- *   get:
- *     summary: Lấy tiến độ bài học
- *     tags: [Courses]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: lessonId
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Tiến độ bài học
- */
-router.get('/lesson/:lessonId/progress', protect, enrollmentController.getLessonProgress);
-
-/**
- * @swagger
- * /api/courses/lesson/{lessonId}/video-progress:
- *   post:
- *     summary: Cập nhật tiến độ xem video
- *     tags: [Courses]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: lessonId
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               currentTime:
- *                 type: number
- *                 description: Thời gian hiện tại (giây)
- *               duration:
- *                 type: number
- *                 description: Tổng thời lượng video (giây)
- *     responses:
- *       200:
- *         description: Cập nhật tiến độ thành công
- */
-router.post('/lesson/:lessonId/video-progress', protect, enrollmentController.updateVideoProgress);
-
 // ========== ADMIN ROUTES ==========
 
 /**
  * @swagger
- * /api/courses/admin/create:
+ * /api/courses/admin/create-full:
  *   post:
- *     summary: Tạo khóa học mới (Admin)
+ *     summary: Tạo khóa học kèm modules và lessons trong 1 API (Admin)
+ *     description: Tạo khóa học, modules và lessons tất cả trong 1 request
  *     tags: [Courses]
  *     security:
  *       - bearerAuth: []
@@ -233,10 +192,155 @@ router.post('/lesson/:lessonId/video-progress', protect, enrollmentController.up
  *             properties:
  *               title:
  *                 type: string
+ *                 example: "Chăm sóc người già cơ bản"
  *               description:
  *                 type: string
+ *                 example: "Khóa học cung cấp kiến thức cơ bản về chăm sóc người già"
  *               thumbnail:
  *                 type: string
+ *                 example: "https://example.com/thumbnail.jpg"
+ *               instructor:
+ *                 type: object
+ *                 properties:
+ *                   name:
+ *                     type: string
+ *                     example: "Nguyễn Văn A"
+ *                   title:
+ *                     type: string
+ *                     example: "Chuyên gia chăm sóc người già"
+ *                   avatar:
+ *                     type: string
+ *                     example: "https://example.com/avatar.jpg"
+ *               level:
+ *                 type: string
+ *                 enum: [Cơ bản, Trung cấp, Nâng cao]
+ *                 example: "Cơ bản"
+ *               category:
+ *                 type: string
+ *                 example: "Chăm sóc sức khỏe"
+ *               tags:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ["chăm sóc", "người già"]
+ *               modules:
+ *                 type: array
+ *                 description: Danh sách modules kèm lessons
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     title:
+ *                       type: string
+ *                       example: "Module 1: Giới thiệu"
+ *                     description:
+ *                       type: string
+ *                       example: "Giới thiệu về chăm sóc người già"
+ *                     order:
+ *                       type: number
+ *                       example: 1
+ *                     lessons:
+ *                       type: array
+ *                       description: Danh sách lessons trong module
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           title:
+ *                             type: string
+ *                             example: "Bài 1: Tổng quan"
+ *                           description:
+ *                             type: string
+ *                             example: "Bài học đầu tiên"
+ *                           content:
+ *                             type: string
+ *                             example: "Nội dung bài học..."
+ *                           videoUrl:
+ *                             type: string
+ *                             example: "https://example.com/video.mp4"
+ *                           duration:
+ *                             type: number
+ *                             example: 1800
+ *                           learningObjectives:
+ *                             type: array
+ *                             items:
+ *                               type: string
+ *                             example: ["Hiểu về nhu cầu", "Nắm nguyên tắc cơ bản"]
+ *                           order:
+ *                             type: number
+ *                             example: 1
+ *           example:
+ *             title: "Chăm sóc người già cơ bản"
+ *             description: "Khóa học cung cấp kiến thức cơ bản"
+ *             level: "Cơ bản"
+ *             category: "Chăm sóc sức khỏe"
+ *             modules:
+ *               - title: "Module 1: Giới thiệu"
+ *                 description: "Giới thiệu về chăm sóc người già"
+ *                 order: 1
+ *                 lessons:
+ *                   - title: "Bài 1: Tổng quan"
+ *                     description: "Bài học đầu tiên"
+ *                     content: "Nội dung bài học..."
+ *                     videoUrl: "https://example.com/video.mp4"
+ *                     duration: 1800
+ *                     order: 1
+ *                   - title: "Bài 2: Nguyên tắc cơ bản"
+ *                     description: "Bài học thứ hai"
+ *                     content: "Nội dung bài học..."
+ *                     videoUrl: "https://example.com/video2.mp4"
+ *                     duration: 2000
+ *                     order: 2
+ *               - title: "Module 2: Thực hành"
+ *                 description: "Module thực hành"
+ *                 order: 2
+ *                 lessons:
+ *                   - title: "Bài 3: Thực hành cơ bản"
+ *                     description: "Bài học thực hành"
+ *                     content: "Nội dung..."
+ *                     videoUrl: "https://example.com/video3.mp4"
+ *                     duration: 1500
+ *                     order: 1
+ *     responses:
+ *       201:
+ *         description: Tạo khóa học kèm modules và lessons thành công
+ */
+router.post('/admin/create-full', protect, authorize(ROLES.ADMIN), courseController.createCourseFull);
+
+/**
+ * @swagger
+ * /api/courses/admin/{id}/update-full:
+ *   put:
+ *     summary: Cập nhật khóa học kèm modules và lessons trong 1 API (Admin)
+ *     description: |
+ *       Cập nhật khóa học, modules và lessons tất cả trong 1 request.
+ *       - Nếu module/lesson có _id: sẽ update
+ *       - Nếu module/lesson không có _id: sẽ tạo mới
+ *       - Các module/lesson không có trong request sẽ bị xóa
+ *     tags: [Courses]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID của course cần update
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title:
+ *                 type: string
+ *                 example: "Chăm sóc người già cơ bản (Updated)"
+ *               description:
+ *                 type: string
+ *                 example: "Mô tả đã cập nhật"
+ *               thumbnail:
+ *                 type: string
+ *                 example: "https://example.com/thumbnail.jpg"
  *               instructor:
  *                 type: object
  *                 properties:
@@ -251,31 +355,77 @@ router.post('/lesson/:lessonId/video-progress', protect, enrollmentController.up
  *                 enum: [Cơ bản, Trung cấp, Nâng cao]
  *               category:
  *                 type: string
- *     responses:
- *       201:
- *         description: Tạo khóa học thành công
- */
-router.post('/admin/create', protect, authorize(ROLES.ADMIN), courseController.createCourse);
-
-/**
- * @swagger
- * /api/courses/admin/{id}:
- *   put:
- *     summary: Cập nhật khóa học (Admin)
- *     tags: [Courses]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
+ *               tags:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *               modules:
+ *                 type: array
+ *                 description: Danh sách modules kèm lessons. Có _id = update, không có _id = tạo mới
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     _id:
+ *                       type: string
+ *                       description: ID của module (nếu có = update, không có = tạo mới)
+ *                     title:
+ *                       type: string
+ *                     description:
+ *                       type: string
+ *                     order:
+ *                       type: number
+ *                     lessons:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           _id:
+ *                             type: string
+ *                             description: ID của lesson (nếu có = update, không có = tạo mới)
+ *                           title:
+ *                             type: string
+ *                           description:
+ *                             type: string
+ *                           content:
+ *                             type: string
+ *                           videoUrl:
+ *                             type: string
+ *                           duration:
+ *                             type: number
+ *                           learningObjectives:
+ *                             type: array
+ *                             items:
+ *                               type: string
+ *                           order:
+ *                             type: number
+ *           example:
+ *             title: "Chăm sóc người già cơ bản (Updated)"
+ *             description: "Mô tả đã cập nhật"
+ *             level: "Cơ bản"
+ *             modules:
+ *               - _id: "existing_module_id"
+ *                 title: "Module 1: Giới thiệu (Updated)"
+ *                 order: 1
+ *                 lessons:
+ *                   - _id: "existing_lesson_id"
+ *                     title: "Bài 1: Tổng quan (Updated)"
+ *                     order: 1
+ *                   - title: "Bài mới: Thêm mới"
+ *                     description: "Bài học mới"
+ *                     order: 2
+ *               - title: "Module mới"
+ *                 description: "Module mới được thêm"
+ *                 order: 2
+ *                 lessons:
+ *                   - title: "Bài học mới"
+ *                     order: 1
  *     responses:
  *       200:
- *         description: Cập nhật thành công
+ *         description: Cập nhật khóa học kèm modules và lessons thành công
+ *       404:
+ *         description: Không tìm thấy khóa học
  */
-router.put('/admin/:id', protect, authorize(ROLES.ADMIN), courseController.updateCourse);
+router.put('/admin/:id/update-full', protect, authorize(ROLES.ADMIN), courseController.updateCourseFull);
 
 /**
  * @swagger
@@ -316,101 +466,5 @@ router.patch('/admin/:id/publish', protect, authorize(ROLES.ADMIN), courseContro
  *         description: Xóa thành công
  */
 router.delete('/admin/:id', protect, authorize(ROLES.ADMIN), courseController.deleteCourse);
-
-/**
- * @swagger
- * /api/courses/admin/{courseId}/modules:
- *   post:
- *     summary: Tạo module mới (Admin)
- *     tags: [Courses]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: courseId
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               title:
- *                 type: string
- *               description:
- *                 type: string
- *               order:
- *                 type: number
- *     responses:
- *       201:
- *         description: Tạo module thành công
- */
-router.post('/admin/:courseId/modules', protect, authorize(ROLES.ADMIN), courseController.createModule);
-
-/**
- * @swagger
- * /api/courses/admin/modules/{moduleId}/lessons:
- *   post:
- *     summary: Tạo bài học mới (Admin)
- *     tags: [Courses]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: moduleId
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               title:
- *                 type: string
- *               description:
- *                 type: string
- *               content:
- *                 type: string
- *               videoUrl:
- *                 type: string
- *               duration:
- *                 type: number
- *               learningObjectives:
- *                 type: array
- *                 items:
- *                   type: string
- *               order:
- *                 type: number
- *     responses:
- *       201:
- *         description: Tạo bài học thành công
- */
-router.post('/admin/modules/:moduleId/lessons', protect, authorize(ROLES.ADMIN), courseController.createLesson);
-
-/**
- * @swagger
- * /api/courses/admin/lessons/{lessonId}:
- *   put:
- *     summary: Cập nhật bài học (Admin)
- *     tags: [Courses]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: lessonId
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Cập nhật thành công
- */
-router.put('/admin/lessons/:lessonId', protect, authorize(ROLES.ADMIN), courseController.updateLesson);
 
 module.exports = router;

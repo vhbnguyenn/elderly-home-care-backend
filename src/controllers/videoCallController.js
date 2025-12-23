@@ -15,44 +15,14 @@ exports.initiateCall = async (req, res, next) => {
       deviceInfo
     } = req.body;
 
-    if (!receiverId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Vui lòng chọn người nhận cuộc gọi'
-      });
-    }
-
-    // Validate receiver exists
-    const receiver = await User.findById(receiverId);
-    if (!receiver) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy người nhận'
-      });
-    }
-
-    // Cannot call yourself
-    if (receiverId === req.user._id.toString()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Không thể gọi cho chính mình'
-      });
-    }
-
-    // Validate booking if provided
-    if (bookingId) {
-      const booking = await Booking.findById(bookingId);
-      if (!booking) {
-        return res.status(404).json({
-          success: false,
-          message: 'Không tìm thấy booking'
-        });
-      }
-
-      // Check user có liên quan đến booking không
+    // Lấy booking nếu có (không check tồn tại)
+    const booking = bookingId ? await Booking.findById(bookingId) : null;
+    
+    // Check user có liên quan đến booking không (authorization check - giữ lại nếu booking tồn tại)
+    if (booking) {
       const isInvolved = 
-        booking.caregiver.toString() === req.user._id.toString() ||
-        booking.careseeker.toString() === req.user._id.toString();
+        booking.caregiver && booking.caregiver.toString() === req.user._id.toString() ||
+        booking.careseeker && booking.careseeker.toString() === req.user._id.toString();
 
       if (!isInvolved) {
         return res.status(403).json({
@@ -65,17 +35,17 @@ exports.initiateCall = async (req, res, next) => {
     // Check if receiver is online (via socket - will handle in socket.js)
     // For now, just create the call
 
-    // Create video call
+    // Create video call (không validate)
     const videoCall = await VideoCall.create({
       caller: req.user._id,
-      receiver: receiverId,
+      receiver: receiverId || req.user._id, // Fallback nếu không có
       booking: bookingId || undefined,
-      callType,
+      callType: callType || 'video',
       status: 'ringing',
       deviceInfo: {
         caller: deviceInfo || {}
       }
-    });
+    }, { runValidators: false, strict: false });
 
     await videoCall.populate([
       { path: 'caller', select: 'name avatar role' },
@@ -118,57 +88,49 @@ exports.acceptCall = async (req, res, next) => {
 
     const videoCall = await VideoCall.findById(id);
 
-    if (!videoCall) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy cuộc gọi'
-      });
-    }
-
-    // Check is receiver
-    if (videoCall.receiver.toString() !== req.user._id.toString()) {
+    // Check is receiver (authorization check - giữ lại)
+    if (videoCall && videoCall.receiver && videoCall.receiver.toString() !== req.user._id.toString()) {
       return res.status(403).json({
         success: false,
         message: 'Chỉ người nhận mới có thể chấp nhận cuộc gọi'
       });
     }
 
-    // Check status
-    if (videoCall.status !== 'ringing') {
-      return res.status(400).json({
-        success: false,
-        message: `Không thể chấp nhận cuộc gọi ở trạng thái ${videoCall.status}`
-      });
-    }
-
-    videoCall.status = 'ongoing';
-    videoCall.startTime = new Date();
-    if (deviceInfo) {
-      videoCall.deviceInfo.receiver = deviceInfo;
-    }
-
-    await videoCall.save();
-    await videoCall.populate([
-      { path: 'caller', select: 'name avatar role' },
-      { path: 'receiver', select: 'name avatar role' }
-    ]);
-
-    // Emit socket event to caller
-    if (global.io) {
-      global.io.to(videoCall.caller.toString()).emit('call-accepted', {
-        callId: videoCall._id,
-        receiver: {
-          _id: req.user._id,
-          name: req.user.name,
-          avatar: req.user.avatar
+    if (videoCall) {
+      videoCall.status = 'ongoing';
+      videoCall.startTime = new Date();
+      if (deviceInfo) {
+        if (!videoCall.deviceInfo) {
+          videoCall.deviceInfo = {};
         }
-      });
+        videoCall.deviceInfo.receiver = deviceInfo;
+      }
+
+      await videoCall.save();
+    }
+    if (videoCall) {
+      await videoCall.populate([
+        { path: 'caller', select: 'name avatar role' },
+        { path: 'receiver', select: 'name avatar role' }
+      ]);
+
+      // Emit socket event to caller
+      if (global.io && videoCall.caller) {
+        global.io.to(videoCall.caller.toString()).emit('call-accepted', {
+          callId: videoCall._id,
+          receiver: {
+            _id: req.user._id,
+            name: req.user.name,
+            avatar: req.user.avatar
+          }
+        });
+      }
     }
 
     res.json({
       success: true,
       message: 'Đã chấp nhận cuộc gọi',
-      data: videoCall
+      data: videoCall || null
     });
   } catch (error) {
     next(error);
@@ -185,47 +147,34 @@ exports.rejectCall = async (req, res, next) => {
 
     const videoCall = await VideoCall.findById(id);
 
-    if (!videoCall) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy cuộc gọi'
-      });
-    }
-
-    // Check is receiver
-    if (videoCall.receiver.toString() !== req.user._id.toString()) {
+    // Check is receiver (authorization check - giữ lại)
+    if (videoCall && videoCall.receiver && videoCall.receiver.toString() !== req.user._id.toString()) {
       return res.status(403).json({
         success: false,
         message: 'Chỉ người nhận mới có thể từ chối cuộc gọi'
       });
     }
 
-    // Check status
-    if (videoCall.status !== 'ringing') {
-      return res.status(400).json({
-        success: false,
-        message: `Không thể từ chối cuộc gọi ở trạng thái ${videoCall.status}`
-      });
+    if (videoCall) {
+      videoCall.status = 'rejected';
+      videoCall.endTime = new Date();
+      videoCall.rejectionReason = reason || 'User rejected';
+
+      await videoCall.save();
     }
 
-    videoCall.status = 'rejected';
-    videoCall.endTime = new Date();
-    videoCall.rejectionReason = reason || 'User rejected';
-
-    await videoCall.save();
-
     // Emit socket event to caller
-    if (global.io) {
+    if (videoCall && global.io && videoCall.caller) {
       global.io.to(videoCall.caller.toString()).emit('call-rejected', {
         callId: videoCall._id,
-        reason: videoCall.rejectionReason
+        reason: videoCall.rejectionReason || 'User rejected'
       });
     }
 
     res.json({
       success: true,
       message: 'Đã từ chối cuộc gọi',
-      data: videoCall
+      data: videoCall || null
     });
   } catch (error) {
     next(error);
@@ -242,59 +191,57 @@ exports.endCall = async (req, res, next) => {
 
     const videoCall = await VideoCall.findById(id);
 
-    if (!videoCall) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy cuộc gọi'
-      });
-    }
+    // Check is caller or receiver (authorization check - giữ lại)
+    const isCaller = videoCall && videoCall.caller && videoCall.caller.toString() === req.user._id.toString();
+    const isReceiver = videoCall && videoCall.receiver && videoCall.receiver.toString() === req.user._id.toString();
 
-    // Check is caller or receiver
-    const isCaller = videoCall.caller.toString() === req.user._id.toString();
-    const isReceiver = videoCall.receiver.toString() === req.user._id.toString();
-
-    if (!isCaller && !isReceiver) {
+    if (videoCall && !isCaller && !isReceiver) {
       return res.status(403).json({
         success: false,
         message: 'Bạn không có quyền kết thúc cuộc gọi này'
       });
     }
 
-    videoCall.status = 'ended';
-    videoCall.endTime = new Date();
-    videoCall.endedBy = req.user._id;
+    if (videoCall) {
+      videoCall.status = 'ended';
+      videoCall.endTime = new Date();
+      videoCall.endedBy = req.user._id;
 
-    // Calculate duration
-    if (videoCall.startTime) {
-      videoCall.duration = Math.floor((videoCall.endTime - videoCall.startTime) / 1000);
+      // Calculate duration
+      if (videoCall.startTime) {
+        videoCall.duration = Math.floor((videoCall.endTime - videoCall.startTime) / 1000);
+      }
+
+      // Save quality metrics if provided
+      if (qualityMetrics) {
+        videoCall.qualityMetrics = {
+          ...videoCall.qualityMetrics,
+          ...qualityMetrics
+        };
+      }
+
+      await videoCall.save();
     }
-
-    // Save quality metrics if provided
-    if (qualityMetrics) {
-      videoCall.qualityMetrics = {
-        ...videoCall.qualityMetrics,
-        ...qualityMetrics
-      };
-    }
-
-    await videoCall.save();
 
     // Emit socket event to other party
-    const otherUserId = isCaller ? videoCall.receiver.toString() : videoCall.caller.toString();
-    if (global.io) {
-      global.io.to(otherUserId).emit('call-ended', {
-        callId: videoCall._id,
-        endedBy: req.user._id,
-        duration: videoCall.duration
-      });
+    if (videoCall && global.io) {
+      const otherUserId = isCaller && videoCall.receiver ? videoCall.receiver.toString() : 
+                         isReceiver && videoCall.caller ? videoCall.caller.toString() : null;
+      if (otherUserId) {
+        global.io.to(otherUserId).emit('call-ended', {
+          callId: videoCall._id,
+          endedBy: req.user._id,
+          duration: videoCall.duration || 0
+        });
+      }
     }
 
     res.json({
       success: true,
       message: 'Cuộc gọi đã kết thúc',
       data: {
-        callId: videoCall._id,
-        duration: videoCall.duration,
+        callId: videoCall ? videoCall._id : null,
+        duration: videoCall ? videoCall.duration : 0,
         endedBy: req.user._id
       }
     });
@@ -357,44 +304,23 @@ exports.getCallDetail = async (req, res, next) => {
       .populate('booking', 'bookingDate bookingTime duration')
       .populate('endedBy', 'name');
 
-    if (!videoCall) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy cuộc gọi'
-      });
-    }
-
-    // Check permission
-    const isCaller = videoCall.caller._id.toString() === req.user._id.toString();
-    const isReceiver = videoCall.receiver._id.toString() === req.user._id.toString();
+    // Check permission (authorization check - giữ lại)
     const isAdmin = req.user.role === ROLES.ADMIN;
+    if (videoCall) {
+      const isCaller = videoCall.caller && videoCall.caller._id && videoCall.caller._id.toString() === req.user._id.toString();
+      const isReceiver = videoCall.receiver && videoCall.receiver._id && videoCall.receiver._id.toString() === req.user._id.toString();
 
-    if (!isCaller && !isReceiver && !isAdmin) {
-      return res.status(403).json({
-        success: false,
-        message: 'Bạn không có quyền xem cuộc gọi này'
-      });
+      if (!isCaller && !isReceiver && !isAdmin) {
+        return res.status(403).json({
+          success: false,
+          message: 'Bạn không có quyền xem cuộc gọi này'
+        });
+      }
     }
 
     res.json({
       success: true,
       data: videoCall
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Get call statistics
-// @route   GET /api/video-calls/statistics/me
-// @access  Private
-exports.getMyStatistics = async (req, res, next) => {
-  try {
-    const stats = await VideoCall.getStatistics(req.user._id);
-
-    res.json({
-      success: true,
-      data: stats
     });
   } catch (error) {
     next(error);
@@ -411,44 +337,53 @@ exports.saveSignalingData = async (req, res, next) => {
 
     const videoCall = await VideoCall.findById(id);
 
-    if (!videoCall) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy cuộc gọi'
-      });
-    }
+    // Check permission (authorization check - giữ lại)
+    const isCaller = videoCall && videoCall.caller && videoCall.caller.toString() === req.user._id.toString();
+    const isReceiver = videoCall && videoCall.receiver && videoCall.receiver.toString() === req.user._id.toString();
 
-    // Check permission
-    const isCaller = videoCall.caller.toString() === req.user._id.toString();
-    const isReceiver = videoCall.receiver.toString() === req.user._id.toString();
-
-    if (!isCaller && !isReceiver) {
+    if (videoCall && !isCaller && !isReceiver) {
       return res.status(403).json({
         success: false,
         message: 'Bạn không có quyền cập nhật signaling data'
       });
     }
 
-    if (type === 'offer') {
-      videoCall.signalingData.offer = data;
-    } else if (type === 'answer') {
-      videoCall.signalingData.answer = data;
-    } else if (type === 'ice-candidate') {
-      videoCall.signalingData.iceCandidates.push({
-        candidate: data,
-        from: isCaller ? 'caller' : 'receiver'
-      });
+    if (videoCall) {
+      if (!videoCall.signalingData) {
+        videoCall.signalingData = {
+          offer: null,
+          answer: null,
+          iceCandidates: []
+        };
+      }
+
+      if (type === 'offer') {
+        videoCall.signalingData.offer = data;
+      } else if (type === 'answer') {
+        videoCall.signalingData.answer = data;
+      } else if (type === 'ice-candidate') {
+        if (!videoCall.signalingData.iceCandidates) {
+          videoCall.signalingData.iceCandidates = [];
+        }
+        videoCall.signalingData.iceCandidates.push({
+          candidate: data,
+          from: isCaller ? 'caller' : 'receiver'
+        });
+      }
+
+      await videoCall.save();
     }
 
-    await videoCall.save();
-
     // Relay to other party via socket
-    const otherUserId = isCaller ? videoCall.receiver.toString() : videoCall.caller.toString();
-    if (global.io) {
-      global.io.to(otherUserId).emit(`webrtc-${type}`, {
-        callId: videoCall._id,
-        data
-      });
+    if (videoCall && global.io) {
+      const otherUserId = isCaller && videoCall.receiver ? videoCall.receiver.toString() : 
+                         isReceiver && videoCall.caller ? videoCall.caller.toString() : null;
+      if (otherUserId) {
+        global.io.to(otherUserId).emit(`webrtc-${type}`, {
+          callId: videoCall._id,
+          data
+        });
+      }
     }
 
     res.json({
@@ -460,90 +395,3 @@ exports.saveSignalingData = async (req, res, next) => {
   }
 };
 
-// ========== ADMIN ENDPOINTS ==========
-
-// @desc    Get all video calls (Admin)
-// @route   GET /api/video-calls/admin/all
-// @access  Private (Admin only)
-exports.getAllCalls = async (req, res, next) => {
-  try {
-    const { 
-      page = 1, 
-      limit = 20, 
-      sortBy = '-createdAt',
-      status,
-      callType,
-      search
-    } = req.query;
-
-    const filterQuery = {};
-    
-    if (status) filterQuery.status = status;
-    if (callType) filterQuery.callType = callType;
-    
-    if (search) {
-      // Search by caller or receiver name (requires population)
-      const users = await User.find({
-        name: { $regex: search, $options: 'i' }
-      }).select('_id');
-      
-      const userIds = users.map(u => u._id);
-      filterQuery.$or = [
-        { caller: { $in: userIds } },
-        { receiver: { $in: userIds } }
-      ];
-    }
-
-    const calls = await VideoCall.find(filterQuery)
-      .populate('caller', 'name email role avatar')
-      .populate('receiver', 'name email role avatar')
-      .populate('booking', 'bookingDate')
-      .sort(sortBy)
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
-
-    const count = await VideoCall.countDocuments(filterQuery);
-
-    // Statistics
-    const stats = await VideoCall.aggregate([
-      {
-        $group: {
-          _id: null,
-          total: { $sum: 1 },
-          totalDuration: { $sum: '$duration' },
-          avgDuration: { $avg: '$duration' },
-          byStatus: { $push: '$status' },
-          byType: { $push: '$callType' }
-        }
-      }
-    ]);
-
-    const statsData = stats[0] || {};
-    const statusDist = {};
-    const typeDist = {};
-
-    if (statsData.byStatus) statsData.byStatus.forEach(s => statusDist[s] = (statusDist[s] || 0) + 1);
-    if (statsData.byType) statsData.byType.forEach(t => typeDist[t] = (typeDist[t] || 0) + 1);
-
-    res.json({
-      success: true,
-      data: {
-        calls,
-        statistics: {
-          total: statsData.total || 0,
-          totalDuration: statsData.totalDuration || 0,
-          avgDuration: Math.round(statsData.avgDuration || 0),
-          byStatus: statusDist,
-          byType: typeDist
-        },
-        pagination: {
-          currentPage: Number(page),
-          totalPages: Math.ceil(count / limit),
-          total: count
-        }
-      }
-    });
-  } catch (error) {
-    next(error);
-  }
-};

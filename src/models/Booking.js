@@ -119,7 +119,7 @@ const bookingSchema = new mongoose.Schema(
       },
       method: {
         type: String,
-        enum: ['payos', 'vnpay', 'momo', 'vietqr', 'bank_transfer', 'cash'],
+        enum: ['payos', 'cash'],
         default: null
       },
       transactionId: {
@@ -131,20 +131,6 @@ const bookingSchema = new mongoose.Schema(
       },
       qrCode: {
         type: String // URL của QR code
-      },
-      bankInfo: {
-        bankName: {
-          type: String,
-          default: 'Vietcombank'
-        },
-        accountNumber: {
-          type: String,
-          default: '1234567890'
-        },
-        accountName: {
-          type: String,
-          default: 'CONG TY ELDERLY CARE'
-        }
       },
       transferredToCaregiver: {
         type: Boolean,
