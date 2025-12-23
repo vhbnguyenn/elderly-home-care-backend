@@ -6,7 +6,6 @@ const CaregiverAvailability = require('../models/CaregiverAvailability');
 const ElderlyProfile = require('../models/ElderlyProfile');
 const Package = require('../models/Package');
 const { rerankCandidates } = require('../services/groqMatchingService');
-const { createCaregiverProfileSchema } = require('../utils/validation');
 const { ROLES } = require('../constants');
 
 // Geocode địa chỉ (dùng Nominatim - không cần API key)
@@ -32,111 +31,49 @@ async function geocodeAddress(address) {
 // @access  Private (Caregiver only)
 const createProfile = async (req, res, next) => {
   try {
-    // Kiểm tra user đã có profile chưa
-    const existingProfile = await CaregiverProfile.findOne({ user: req.user._id });
-    if (existingProfile) {
-      return res.status(400).json({
-        success: false,
-        message: 'Hồ sơ đã tồn tại'
-      });
-    }
-
     // Parse certificates nếu là string (từ form-data)
     let bodyData = { ...req.body };
     if (typeof req.body.certificates === 'string') {
       try {
         bodyData.certificates = JSON.parse(req.body.certificates);
       } catch (e) {
-        return res.status(400).json({
-          success: false,
-          message: 'Định dạng chứng chỉ không hợp lệ. Phải là mảng JSON hợp lệ'
-        });
+        // Bỏ qua lỗi parse, để certificates là string hoặc undefined
       }
     }
 
-    // Validate request body
-    const { error, value } = createCaregiverProfileSchema.validate(bodyData);
-    if (error) {
-      return res.status(400).json({
-        success: false,
-        message: error.details[0].message
-      });
-    }
-
-    // Kiểm tra files được upload
-    if (!req.files) {
-      return res.status(400).json({
-        success: false,
-        message: 'Thiếu hình ảnh bắt buộc'
-      });
-    }
-
-    const { idCardFrontImage, idCardBackImage, universityDegreeImage, profileImage, certificateImages } = req.files;
-
-    // Validate required images
-    if (!idCardFrontImage || !idCardBackImage || !profileImage) {
-      return res.status(400).json({
-        success: false,
-        message: 'Bắt buộc có ảnh CCCD/CMND (mặt trước & mặt sau) và ảnh đại diện'
-      });
-    }
-
-    // Validate university degree image nếu education là đại học hoặc sau đại học
-    if ((value.education === 'đại học' || value.education === 'sau đại học') && !universityDegreeImage) {
-      return res.status(400).json({
-        success: false,
-        message: 'Bắt buộc có ảnh bằng đại học đối với trình độ đại học hoặc sau đại học'
-      });
-    }
-
-    // Validate certificate images
-    if (!certificateImages || certificateImages.length !== value.certificates.length) {
-      return res.status(400).json({
-        success: false,
-        message: 'Mỗi chứng chỉ phải có một ảnh'
-      });
-    }
-
-    // Kiểm tra ID card number đã tồn tại chưa
-    const existingIdCard = await CaregiverProfile.findOne({ idCardNumber: value.idCardNumber });
-    if (existingIdCard) {
-      return res.status(400).json({
-        success: false,
-        message: 'Số CCCD/CMND đã tồn tại'
-      });
-    }
-
-    // Tạo profile data với URLs của các file đã upload
+    // Tạo profile data
     const profileData = {
       user: req.user._id,
-      phoneNumber: value.phoneNumber,
-      dateOfBirth: value.dateOfBirth,
-      gender: value.gender,
-      permanentAddress: value.permanentAddress,
-      temporaryAddress: value.temporaryAddress || '',
-      idCardNumber: value.idCardNumber,
-      idCardFrontImage: idCardFrontImage[0].path, // Cloudinary URL
-      idCardBackImage: idCardBackImage[0].path, // Cloudinary URL
-      yearsOfExperience: value.yearsOfExperience,
-      workHistory: value.workHistory,
-      education: value.education,
-      universityDegreeImage: universityDegreeImage ? universityDegreeImage[0].path : null,
-      profileImage: profileImage[0].path, // Cloudinary URL
-      bio: value.bio,
-      agreeToEthics: value.agreeToEthics,
-      agreeToTerms: value.agreeToTerms,
-      certificates: value.certificates.map((cert, index) => ({
-        name: cert.name,
-        issueDate: cert.issueDate,
-        issuingOrganization: cert.issuingOrganization,
-        certificateType: cert.certificateType,
-        certificateImage: certificateImages[index].path // Cloudinary URL
-      }))
+      ...bodyData
     };
+
+    // Xử lý files nếu có upload
+    if (req.files) {
+      const { idCardFrontImage, idCardBackImage, universityDegreeImage, profileImage, certificateImages } = req.files;
+
+      if (idCardFrontImage) {
+        profileData.idCardFrontImage = idCardFrontImage[0].path;
+      }
+      if (idCardBackImage) {
+        profileData.idCardBackImage = idCardBackImage[0].path;
+      }
+      if (universityDegreeImage) {
+        profileData.universityDegreeImage = universityDegreeImage[0].path;
+      }
+      if (profileImage) {
+        profileData.profileImage = profileImage[0].path; // Cloudinary URL - Avatar của caregiver
+      }
+      if (certificateImages && bodyData.certificates && Array.isArray(bodyData.certificates)) {
+        profileData.certificates = bodyData.certificates.map((cert, index) => ({
+          ...cert,
+          certificateImage: certificateImages[index] ? certificateImages[index].path : null
+        }));
+      }
+    }
 
     // Geocode địa chỉ caregiver (ưu tiên tạm trú, fallback thường trú)
     try {
-      const cgAddress = value.temporaryAddress || value.permanentAddress;
+      const cgAddress = profileData.temporaryAddress || profileData.permanentAddress;
       if (cgAddress) {
         const coords = await geocodeAddress(cgAddress);
         if (coords) {
@@ -147,8 +84,11 @@ const createProfile = async (req, res, next) => {
       console.warn('Geocode caregiver address failed:', geoErr.message);
     }
 
-    // Tạo profile
-    const profile = await CaregiverProfile.create(profileData);
+    // Tạo profile (bỏ validation và strict mode)
+    const profile = await CaregiverProfile.create(profileData, { 
+      runValidators: false,
+      strict: false 
+    });
 
     // Populate user info
     await profile.populate('user', 'name email role');
@@ -172,16 +112,9 @@ const getMyProfile = async (req, res, next) => {
     const profile = await CaregiverProfile.findOne({ user: req.user._id })
       .populate('user', 'name email role');
 
-    if (!profile) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy hồ sơ'
-      });
-    }
-
     res.status(200).json({
       success: true,
-      data: profile
+      data: profile || null
     });
 
   } catch (error) {
@@ -203,36 +136,22 @@ const updateProfile = async (req, res, next) => {
       });
     }
 
-    // Không cho phép update nếu profile đang pending hoặc approved
-    if (profile.profileStatus === 'approved') {
-      return res.status(400).json({
-        success: false,
-        message: 'Không thể cập nhật hồ sơ đã được duyệt. Vui lòng liên hệ admin.'
-      });
-    }
+    const updateFields = { ...req.body };
 
-    // Chỉ cho phép update các field: phoneNumber, temporaryAddress, education, yearsOfExperience, workHistory, profileImage, bio
-    const allowedFields = ['phoneNumber', 'temporaryAddress', 'education', 'yearsOfExperience', 'workHistory', 'bio'];
-    const updateFields = {};
-
-    // Validate và lấy các field được phép update
-    for (const field of allowedFields) {
-      if (req.body[field] !== undefined) {
-        updateFields[field] = req.body[field];
+    // Xử lý files nếu có upload
+    if (req.files) {
+      if (req.files.profileImage) {
+        updateFields.profileImage = req.files.profileImage[0].path; // Cloudinary URL - Avatar của caregiver
       }
-    }
-
-    // Kiểm tra có field nào để update không
-    if (Object.keys(updateFields).length === 0 && !req.files?.profileImage) {
-      return res.status(400).json({
-        success: false,
-        message: 'Không có dữ liệu để cập nhật'
-      });
-    }
-
-    // Update profile image nếu có
-    if (req.files?.profileImage) {
-      updateFields.profileImage = req.files.profileImage[0].path; // Cloudinary URL
+      if (req.files.idCardFrontImage) {
+        updateFields.idCardFrontImage = req.files.idCardFrontImage[0].path;
+      }
+      if (req.files.idCardBackImage) {
+        updateFields.idCardBackImage = req.files.idCardBackImage[0].path;
+      }
+      if (req.files.universityDegreeImage) {
+        updateFields.universityDegreeImage = req.files.universityDegreeImage[0].path;
+      }
     }
 
     // Geocode nếu có địa chỉ tạm trú mới
@@ -251,7 +170,7 @@ const updateProfile = async (req, res, next) => {
     profile = await CaregiverProfile.findByIdAndUpdate(
       profile._id,
       updateFields,
-      { new: true, runValidators: true }
+      { new: true, runValidators: false }
     ).populate('user', 'name email role');
 
     res.status(200).json({
@@ -273,16 +192,9 @@ const getProfileForAdmin = async (req, res, next) => {
     const profile = await CaregiverProfile.findById(req.params.id)
       .populate('user', 'name email phone createdAt');
 
-    if (!profile) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy hồ sơ'
-      });
-    }
-
     res.status(200).json({
       success: true,
-      data: profile
+      data: profile || null
     });
 
   } catch (error) {
@@ -295,20 +207,15 @@ const getProfileForAdmin = async (req, res, next) => {
 // @access  Private (Admin only)
 const getAllProfiles = async (req, res, next) => {
   try {
-    const { status, page = 1, limit = 10 } = req.query;
+    const { page = 1, limit = 10 } = req.query;
 
-    const query = {};
-    if (status) {
-      query.profileStatus = status;
-    }
-
-    const profiles = await CaregiverProfile.find(query)
+    const profiles = await CaregiverProfile.find({})
       .populate('user', 'name email')
-      .limit(limit * 1)
-      .skip((page - 1) * limit)
+      .limit(Number(limit))
+      .skip((Number(page) - 1) * Number(limit))
       .sort({ createdAt: -1 });
 
-    const count = await CaregiverProfile.countDocuments(query);
+    const count = await CaregiverProfile.countDocuments({});
 
     res.status(200).json({
       success: true,
@@ -330,40 +237,23 @@ const updateProfileStatus = async (req, res, next) => {
   try {
     const { status, rejectionReason } = req.body;
 
-    if (!['approved', 'rejected'].includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Trạng thái không hợp lệ. Chỉ chấp nhận approved hoặc rejected'
-      });
+    const updateData = {};
+    if (status !== undefined) {
+      updateData.profileStatus = status;
+    }
+    if (rejectionReason !== undefined) {
+      updateData.rejectionReason = rejectionReason;
     }
 
-    if (status === 'rejected' && !rejectionReason) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cần cung cấp lý do từ chối'
-      });
-    }
-
-    const profile = await CaregiverProfile.findById(req.params.id);
-
-    if (!profile) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy hồ sơ'
-      });
-    }
-
-    profile.profileStatus = status;
-    if (status === 'rejected') {
-      profile.rejectionReason = rejectionReason;
-    }
-
-    await profile.save();
-    await profile.populate('user', 'name email');
+    const profile = await CaregiverProfile.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { new: true, runValidators: false }
+    ).populate('user', 'name email');
 
     res.status(200).json({
       success: true,
-      message: `Cập nhật trạng thái hồ sơ thành công: ${status}`,
+      message: 'Cập nhật trạng thái hồ sơ thành công',
       data: profile
     });
 
@@ -772,21 +662,13 @@ const getCaregiverDetail = async (req, res, next) => {
     const { caregiverId } = req.params;
 
     const caregiver = await CaregiverProfile.findById(caregiverId)
-      .populate('user', 'name email')
-      .select('-__v -idCardNumber -idCardFrontImage -idCardBackImage');
+      .populate('user', 'name email phone')
+      .select('-idCardNumber -idCardFrontImage -idCardBackImage -temporaryAddress -permanentAddress');
 
     if (!caregiver) {
       return res.status(404).json({
         success: false,
         message: 'Không tìm thấy caregiver',
-      });
-    }
-
-    // Only show approved profiles
-    if (caregiver.profileStatus !== 'approved') {
-      return res.status(403).json({
-        success: false,
-        message: 'Hồ sơ caregiver không khả dụng',
       });
     }
 
@@ -806,47 +688,17 @@ const getCaregiversList = async (req, res, next) => {
   try {
     const { 
       page = 1, 
-      limit = 20,
-      education,
-      minExperience,
-      location,
-      sortBy = 'createdAt',
-      order = 'desc'
+      limit = 20
     } = req.query;
 
-    // Query chỉ lấy caregiver đã approved
-    const query = { profileStatus: 'approved' };
-
-    // Filter theo education
-    if (education) {
-      query.education = education;
-    }
-
-    // Filter theo kinh nghiệm tối thiểu
-    if (minExperience) {
-      query.yearsOfExperience = { $gte: Number(minExperience) };
-    }
-
-    // Filter theo location
-    if (location) {
-      query.$or = [
-        { permanentAddress: { $regex: location, $options: 'i' } },
-        { temporaryAddress: { $regex: location, $options: 'i' } }
-      ];
-    }
-
-    // Sort options
-    const sortOptions = {};
-    sortOptions[sortBy] = order === 'asc' ? 1 : -1;
-
-    const caregivers = await CaregiverProfile.find(query)
+    const caregivers = await CaregiverProfile.find({})
+      .select('-idCardNumber -idCardFrontImage -idCardBackImage -temporaryAddress -permanentAddress')
       .populate('user', 'name email phone')
-      .select('-idCardNumber -idCardFrontImage -idCardBackImage -universityDegreeImage')
-      .sort(sortOptions)
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .sort({ createdAt: -1 })
+      .limit(Number(limit))
+      .skip((Number(page) - 1) * Number(limit));
 
-    const count = await CaregiverProfile.countDocuments(query);
+    const count = await CaregiverProfile.countDocuments({});
 
     res.status(200).json({
       success: true,

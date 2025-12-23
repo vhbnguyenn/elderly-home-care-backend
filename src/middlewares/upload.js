@@ -40,7 +40,7 @@ const uploadCaregiverProfile = upload.fields([
   { name: 'idCardFrontImage', maxCount: 1 },
   { name: 'idCardBackImage', maxCount: 1 },
   { name: 'universityDegreeImage', maxCount: 1 },
-  { name: 'profileImage', maxCount: 1 },
+  { name: 'profileImage', maxCount: 1 }, // Avatar của caregiver
   { name: 'certificateImages', maxCount: 10 } // Tối đa 10 chứng chỉ
 ]);
 
