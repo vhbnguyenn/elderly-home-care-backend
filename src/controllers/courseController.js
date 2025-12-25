@@ -621,3 +621,33 @@ exports.updateLesson = async (req, res) => {
     });
   }
 };
+
+// Upload video to Cloudinary
+exports.uploadVideo = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Vui lòng chọn file video để upload'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Upload video thành công',
+      data: {
+        videoUrl: req.file.path,
+        videoProvider: 'cloudinary',
+        publicId: req.file.filename,
+        duration: req.file.duration || null,
+        format: req.file.format,
+        size: req.file.size
+      }
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
