@@ -3,6 +3,7 @@ const router = express.Router();
 const systemFeedbackController = require('../controllers/systemFeedbackController');
 const { protect, authorize } = require('../middlewares/auth');
 const { ROLES } = require('../constants');
+const { uploadFeedbackImagesOptional } = require('../middlewares/upload');
 
 /**
  * @swagger
@@ -84,7 +85,7 @@ const { ROLES } = require('../constants');
  *       400:
  *         description: Bad request - validation error
  */
-router.post('/', protect, systemFeedbackController.createFeedback);
+router.post('/', protect, uploadFeedbackImagesOptional, systemFeedbackController.createFeedback);
 
 /**
  * @swagger

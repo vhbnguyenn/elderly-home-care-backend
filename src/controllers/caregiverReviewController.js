@@ -145,7 +145,7 @@ exports.getCareseekerReviews = async (req, res, next) => {
 
     // Check if careseeker exists
     const careseeker = await User.findById(careseekerUserId);
-    if (!careseeker || careseeker.role !== ROLES.CARE_SEEKER) {
+    if (!careseeker || careseeker.role !== ROLES.CARESEEKER) {
       return res.status(404).json({
         success: false,
         message: 'Không tìm thấy careseeker'
@@ -238,7 +238,7 @@ exports.getReceivedReviews = async (req, res, next) => {
   try {
     const { page = 1, limit = 10, sortBy = '-createdAt' } = req.query;
 
-    if (req.user.role !== ROLES.CARE_SEEKER) {
+    if (req.user.role !== ROLES.CARESEEKER) {
       return res.status(403).json({
         success: false,
         message: 'Chỉ careseeker mới có thể xem reviews nhận được'

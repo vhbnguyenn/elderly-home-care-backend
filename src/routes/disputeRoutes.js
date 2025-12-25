@@ -450,4 +450,87 @@ router.put('/:id/status', protect, authorize(ROLES.ADMIN), disputeController.upd
  */
 router.post('/:id/internal-note', protect, authorize(ROLES.ADMIN), disputeController.addInternalNote);
 
+/**
+ * @swagger
+ * /api/disputes/admin/reviews:
+ *   get:
+ *     summary: Xem danh sách reviews về quá trình khiếu nại (Admin only)
+ *     description: Lấy tất cả các dispute có reviews/feedback từ người dùng
+ *     tags: [Disputes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: hasComplainantReview
+ *         schema:
+ *           type: boolean
+ *         description: Lọc theo có review từ người khiếu nại
+ *       - in: query
+ *         name: hasRespondentReview
+ *         schema:
+ *           type: boolean
+ *         description: Lọc theo có review từ người bị khiếu nại
+ *       - in: query
+ *         name: minRating
+ *         schema:
+ *           type: number
+ *           minimum: 1
+ *           maximum: 5
+ *         description: Lọc rating tối thiểu
+ *       - in: query
+ *         name: maxRating
+ *         schema:
+ *           type: number
+ *           minimum: 1
+ *           maximum: 5
+ *         description: Lọc rating tối đa
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *         description: Lọc theo trạng thái dispute
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: number
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: number
+ *           default: 20
+ *     responses:
+ *       200:
+ *         description: List of dispute reviews
+ *       403:
+ *         description: Forbidden
+ */
+router.get('/admin/reviews', protect, authorize(ROLES.ADMIN), disputeController.getDisputeReviews);
+
+/**
+ * @swagger
+ * /api/disputes/admin/reviews/{id}:
+ *   get:
+ *     summary: Xem chi tiết review về một khiếu nại (Admin only)
+ *     description: Lấy chi tiết đầy đủ về dispute và các reviews từ cả 2 bên
+ *     tags: [Disputes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID của dispute
+ *     responses:
+ *       200:
+ *         description: Dispute review detail
+ *       404:
+ *         description: Dispute not found
+ *       403:
+ *         description: Forbidden
+ */
+router.get('/admin/reviews/:id', protect, authorize(ROLES.ADMIN), disputeController.getDisputeReviewDetail);
+
 module.exports = router;

@@ -584,3 +584,177 @@ exports.addInternalNote = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    Get all dispute reviews (Admin)
+// @route   GET /api/disputes/admin/reviews
+// @access  Private (Admin only)
+exports.getDisputeReviews = async (req, res, next) => {
+  try {
+    const {
+      hasComplainantReview,
+      hasRespondentReview,
+      minRating,
+      maxRating,
+      status,
+      page = 1,
+      limit = 20
+    } = req.query;
+
+    // Build filter
+    const filter = {};
+
+    // Lọc disputes có ít nhất 1 review
+    const hasReviewConditions = [];
+    if (hasComplainantReview === 'true') {
+      hasReviewConditions.push({ 'complainantSatisfaction.rating': { $exists: true, $ne: null } });
+    }
+    if (hasRespondentReview === 'true') {
+      hasReviewConditions.push({ 'respondentSatisfaction.rating': { $exists: true, $ne: null } });
+    }
+    
+    // Nếu không chỉ định filter cụ thể, lấy tất cả có review
+    if (hasReviewConditions.length === 0) {
+      filter.$or = [
+        { 'complainantSatisfaction.rating': { $exists: true, $ne: null } },
+        { 'respondentSatisfaction.rating': { $exists: true, $ne: null } }
+      ];
+    } else {
+      filter.$and = hasReviewConditions;
+    }
+
+    // Lọc theo rating range
+    if (minRating || maxRating) {
+      const ratingConditions = [];
+      if (minRating) {
+        ratingConditions.push(
+          { 'complainantSatisfaction.rating': { $gte: Number(minRating) } },
+          { 'respondentSatisfaction.rating': { $gte: Number(minRating) } }
+        );
+      }
+      if (maxRating) {
+        ratingConditions.push(
+          { 'complainantSatisfaction.rating': { $lte: Number(maxRating) } },
+          { 'respondentSatisfaction.rating': { $lte: Number(maxRating) } }
+        );
+      }
+      if (!filter.$or) filter.$or = [];
+      filter.$or.push(...ratingConditions);
+    }
+
+    // Lọc theo status
+    if (status) {
+      filter.status = status;
+    }
+
+    // Pagination
+    const skip = (Number(page) - 1) * Number(limit);
+
+    // Query
+    const disputes = await Dispute.find(filter)
+      .populate('complainant', 'name email role')
+      .populate('respondent', 'name email role')
+      .populate('booking', 'bookingId startDate endDate totalPrice status')
+      .populate('assignedTo', 'name email')
+      .populate('adminDecision.decidedBy', 'name email')
+      .sort({ 'complainantSatisfaction.ratedAt': -1, 'respondentSatisfaction.ratedAt': -1, createdAt: -1 })
+      .skip(skip)
+      .limit(Number(limit))
+      .lean();
+
+    // Count total
+    const total = await Dispute.countDocuments(filter);
+
+    // Format response
+    const formattedDisputes = disputes.map(dispute => ({
+      _id: dispute._id,
+      title: dispute.title,
+      disputeType: dispute.disputeType,
+      status: dispute.status,
+      severity: dispute.severity,
+      complainant: dispute.complainant,
+      respondent: dispute.respondent,
+      booking: dispute.booking,
+      complainantSatisfaction: dispute.complainantSatisfaction,
+      respondentSatisfaction: dispute.respondentSatisfaction,
+      adminDecision: dispute.adminDecision,
+      assignedTo: dispute.assignedTo,
+      createdAt: dispute.createdAt,
+      closedAt: dispute.closedAt,
+      // Tính average rating nếu có cả 2
+      averageRating: (() => {
+        const ratings = [];
+        if (dispute.complainantSatisfaction?.rating) ratings.push(dispute.complainantSatisfaction.rating);
+        if (dispute.respondentSatisfaction?.rating) ratings.push(dispute.respondentSatisfaction.rating);
+        return ratings.length > 0 ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) : null;
+      })()
+    }));
+
+    res.json({
+      success: true,
+      count: formattedDisputes.length,
+      total,
+      page: Number(page),
+      pages: Math.ceil(total / Number(limit)),
+      data: formattedDisputes
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get dispute review detail (Admin)
+// @route   GET /api/disputes/admin/reviews/:id
+// @access  Private (Admin only)
+exports.getDisputeReviewDetail = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const dispute = await Dispute.findById(id)
+      .populate('complainant', 'name email role profile')
+      .populate('respondent', 'name email role profile')
+      .populate('booking')
+      .populate('assignedTo', 'name email')
+      .populate('adminDecision.decidedBy', 'name email')
+      .populate('responses.userId', 'name email role')
+      .populate('timeline.performedBy', 'name email')
+      .populate('internalNotes.addedBy', 'name email')
+      .lean();
+
+    if (!dispute) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy dispute'
+      });
+    }
+
+    // Format response với full information
+    const formattedDispute = {
+      ...dispute,
+      // Tính average rating
+      averageRating: (() => {
+        const ratings = [];
+        if (dispute.complainantSatisfaction?.rating) ratings.push(dispute.complainantSatisfaction.rating);
+        if (dispute.respondentSatisfaction?.rating) ratings.push(dispute.respondentSatisfaction.rating);
+        return ratings.length > 0 ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) : null;
+      })(),
+      // Review summary
+      reviewSummary: {
+        hasComplainantReview: !!dispute.complainantSatisfaction?.rating,
+        hasRespondentReview: !!dispute.respondentSatisfaction?.rating,
+        complainantRating: dispute.complainantSatisfaction?.rating || null,
+        respondentRating: dispute.respondentSatisfaction?.rating || null,
+        complainantFeedback: dispute.complainantSatisfaction?.feedback || null,
+        respondentFeedback: dispute.respondentSatisfaction?.feedback || null,
+        complainantRatedAt: dispute.complainantSatisfaction?.ratedAt || null,
+        respondentRatedAt: dispute.respondentSatisfaction?.ratedAt || null
+      }
+    };
+
+    res.json({
+      success: true,
+      data: formattedDispute
+    });
+  } catch (error) {
+    next(error);
+  }
+};
