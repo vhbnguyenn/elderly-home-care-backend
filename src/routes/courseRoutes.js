@@ -4,6 +4,7 @@ const courseController = require('../controllers/courseController');
 const enrollmentController = require('../controllers/enrollmentController');
 const { protect, authorize, protectOptional } = require('../middlewares/auth');
 const { ROLES } = require('../constants/roles');
+const { uploadVideo } = require('../middlewares/upload');
 
 /**
  * @swagger
@@ -170,6 +171,62 @@ router.get('/:courseId/progress', protect, enrollmentController.getCourseProgres
 router.post('/lesson/:lessonId/complete', protect, enrollmentController.markLessonComplete);
 
 // ========== ADMIN ROUTES ==========
+
+/**
+ * @swagger
+ * /api/courses/admin/upload-video:
+ *   post:
+ *     summary: Upload video lên Cloudinary (Admin)
+ *     description: Upload video file từ local lên Cloudinary và trả về URL
+ *     tags: [Courses]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - video
+ *             properties:
+ *               video:
+ *                 type: string
+ *                 format: binary
+ *                 description: Video file (mp4, mov, avi, mkv, wmv, flv, webm) - Max 100MB
+ *     responses:
+ *       200:
+ *         description: Upload video thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     videoUrl:
+ *                       type: string
+ *                       description: URL của video trên Cloudinary
+ *                     videoProvider:
+ *                       type: string
+ *                       description: Luôn là "cloudinary"
+ *                     publicId:
+ *                       type: string
+ *                     duration:
+ *                       type: number
+ *                     format:
+ *                       type: string
+ *                     size:
+ *                       type: number
+ *       400:
+ *         description: Lỗi upload (không có file hoặc file không hợp lệ)
+ */
+router.post('/admin/upload-video', protect, authorize(ROLES.ADMIN), uploadVideo.single('video'), courseController.uploadVideo);
 
 /**
  * @swagger

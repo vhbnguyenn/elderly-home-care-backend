@@ -3,13 +3,26 @@ const path = require('path');
 const cloudinary = require('../config/cloudinary');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
-// Cấu hình Cloudinary Storage
+// Cấu hình Cloudinary Storage cho ảnh
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
     folder: 'elderly-care', // Folder trên Cloudinary
     allowed_formats: ['jpg', 'jpeg', 'png'],
     transformation: [{ width: 1000, height: 1000, crop: 'limit' }] // Resize ảnh
+  }
+});
+
+// Cấu hình Cloudinary Storage cho video
+const videoStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'elderly-care/videos',
+    resource_type: 'video',
+    allowed_formats: ['mp4', 'mov', 'avi', 'mkv', 'wmv', 'flv', 'webm'],
+    transformation: [
+      { quality: 'auto', fetch_format: 'auto' }
+    ]
   }
 });
 
@@ -69,11 +82,20 @@ const uploadElderlyAvatarOptional = (req, res, next) => {
   next();
 };
 
+// Cấu hình upload video với giới hạn 100MB
+const uploadVideo = multer({
+  storage: videoStorage,
+  limits: {
+    fileSize: 100 * 1024 * 1024 // Giới hạn 100MB
+  }
+});
+
 module.exports = {
   upload,
   uploadCaregiverProfile,
   uploadCaregiverProfileOptional,
   uploadSingle,
   uploadElderlyAvatar,
-  uploadElderlyAvatarOptional
+  uploadElderlyAvatarOptional,
+  uploadVideo // Thêm upload video
 };

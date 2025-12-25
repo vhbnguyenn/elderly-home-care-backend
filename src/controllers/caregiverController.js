@@ -5,6 +5,7 @@ const CaregiverSkill = require('../models/CaregiverSkill');
 const CaregiverAvailability = require('../models/CaregiverAvailability');
 const ElderlyProfile = require('../models/ElderlyProfile');
 const Package = require('../models/Package');
+const Certificate = require('../models/Certificate');
 const { rerankCandidates } = require('../services/groqMatchingService');
 const { ROLES } = require('../constants');
 
@@ -31,14 +32,44 @@ async function geocodeAddress(address) {
 // @access  Private (Caregiver only)
 const createProfile = async (req, res, next) => {
   try {
+    console.log('🚀 createProfile called - User ID:', req.user?._id || 'NULL');
+    console.log('📋 Request body keys:', Object.keys(req.body));
+    
+    // Kiểm tra user đã đăng nhập
+    if (!req.user || !req.user._id) {
+      console.log('❌ No user in request!');
+      return res.status(401).json({
+        success: false,
+        message: 'Vui lòng đăng nhập để tạo hồ sơ'
+      });
+    }
+
+    // Kiểm tra đã có profile chưa
+    const existingProfile = await CaregiverProfile.findOne({ user: req.user._id });
+    if (existingProfile) {
+      console.log('⚠️ Profile already exists for user:', req.user._id);
+      return res.status(400).json({
+        success: false,
+        message: 'Bạn đã có hồ sơ rồi. Vui lòng cập nhật thay vì tạo mới.'
+      });
+    }
+
     // Parse certificates nếu là string (từ form-data)
     let bodyData = { ...req.body };
+    let certificatesData = [];
+    
     if (typeof req.body.certificates === 'string') {
       try {
-        bodyData.certificates = JSON.parse(req.body.certificates);
+        certificatesData = JSON.parse(req.body.certificates);
+        console.log('✅ Parsed certificates from string:', certificatesData);
       } catch (e) {
-        // Bỏ qua lỗi parse, để certificates là string hoặc undefined
+        console.log('❌ Failed to parse certificates:', e.message);
       }
+    } else if (Array.isArray(req.body.certificates)) {
+      certificatesData = req.body.certificates;
+      console.log('✅ Certificates from array:', certificatesData);
+    } else {
+      console.log('⚠️ No certificates in request body');
     }
 
     // Tạo profile data
@@ -63,12 +94,19 @@ const createProfile = async (req, res, next) => {
       if (profileImage) {
         profileData.profileImage = profileImage[0].path; // Cloudinary URL - Avatar của caregiver
       }
-      if (certificateImages && bodyData.certificates && Array.isArray(bodyData.certificates)) {
-        profileData.certificates = bodyData.certificates.map((cert, index) => ({
+      
+      // Map certificate images với certificates data
+      if (certificateImages && Array.isArray(certificatesData)) {
+        certificatesData = certificatesData.map((cert, index) => ({
           ...cert,
           certificateImage: certificateImages[index] ? certificateImages[index].path : null
         }));
       }
+    }
+    
+    // Lưu certificates vào CaregiverProfile (embedded)
+    if (certificatesData && certificatesData.length > 0) {
+      profileData.certificates = certificatesData;
     }
 
     // Geocode địa chỉ caregiver (ưu tiên tạm trú, fallback thường trú)
@@ -85,18 +123,44 @@ const createProfile = async (req, res, next) => {
     }
 
     // Tạo profile (bỏ validation và strict mode)
-    const profile = await CaregiverProfile.create(profileData, { 
-      runValidators: false,
-      strict: false 
-    });
+    console.log('💾 Creating profile with user:', req.user._id);
+    let profile;
+    try {
+      profile = await CaregiverProfile.create(profileData);
+      console.log('✅ Profile created:', profile._id);
+    } catch (createError) {
+      console.log('❌ Error creating profile:', createError.message);
+      throw createError;
+    }
 
-    // Populate user info
-    await profile.populate('user', 'name email role');
+    // Tạo certificates riêng trong bảng Certificate nếu có
+    if (certificatesData && Array.isArray(certificatesData) && certificatesData.length > 0) {
+      const certificatesToCreate = certificatesData.map(cert => ({
+        caregiver: req.user._id,
+        caregiverProfile: profile._id,
+        name: cert.name,
+        issueDate: cert.issueDate,
+        expirationDate: cert.expirationDate,
+        issuingOrganization: cert.issuingOrganization,
+        certificateType: cert.certificateType,
+        certificateImage: cert.certificateImage,
+        status: 'pending'
+      }));
+      
+      await Certificate.insertMany(certificatesToCreate, { 
+        runValidators: false,
+        strict: false 
+      });
+    }
+
+    // Query lại để populate user info
+    const populatedProfile = await CaregiverProfile.findById(profile._id)
+      .populate('user', 'name email role');
 
     res.status(201).json({
       success: true,
       message: 'Tạo hồ sơ thành công',
-      data: profile
+      data: populatedProfile
     });
 
   } catch (error) {
@@ -112,9 +176,20 @@ const getMyProfile = async (req, res, next) => {
     const profile = await CaregiverProfile.findOne({ user: req.user._id })
       .populate('user', 'name email role');
 
+    // Lấy certificates từ bảng Certificate
+    let certificates = [];
+    if (profile) {
+      certificates = await Certificate.find({ 
+        caregiverProfile: profile._id 
+      }).sort({ createdAt: -1 });
+    }
+
     res.status(200).json({
       success: true,
-      data: profile || null
+      data: profile ? {
+        ...profile.toObject(),
+        certificates // Thêm certificates từ bảng riêng
+      } : null
     });
 
   } catch (error) {
@@ -192,9 +267,20 @@ const getProfileForAdmin = async (req, res, next) => {
     const profile = await CaregiverProfile.findById(req.params.id)
       .populate('user', 'name email phone createdAt');
 
+    // Lấy certificates từ bảng Certificate
+    let certificates = [];
+    if (profile) {
+      certificates = await Certificate.find({ 
+        caregiverProfile: profile._id 
+      }).sort({ createdAt: -1 });
+    }
+
     res.status(200).json({
       success: true,
-      data: profile || null
+      data: profile ? {
+        ...profile.toObject(),
+        certificates // Thêm certificates từ bảng riêng
+      } : null
     });
 
   } catch (error) {
@@ -217,9 +303,26 @@ const getAllProfiles = async (req, res, next) => {
 
     const count = await CaregiverProfile.countDocuments({});
 
+    // Lấy certificates cho tất cả profiles
+    const profileIds = profiles.map(p => p._id);
+    const allCertificates = await Certificate.find({ 
+      caregiverProfile: { $in: profileIds } 
+    }).sort({ createdAt: -1 });
+
+    // Map certificates vào từng profile
+    const profilesWithCerts = profiles.map(profile => {
+      const certs = allCertificates.filter(
+        cert => cert.caregiverProfile.toString() === profile._id.toString()
+      );
+      return {
+        ...profile.toObject(),
+        certificates: certs
+      };
+    });
+
     res.status(200).json({
       success: true,
-      data: profiles,
+      data: profilesWithCerts,
       totalPages: Math.ceil(count / limit),
       currentPage: Number(page),
       total: count
@@ -269,7 +372,7 @@ const searchCaregivers = async (req, res, next) => {
   try {
     const {
       elderlyId,
-      location, // { address, coordinates?, district? } - required
+      location, // { address, coordinates?, district? }
       packageId,
       skills = [],
       requiredCertificates = [],
@@ -280,16 +383,10 @@ const searchCaregivers = async (req, res, next) => {
       override = {}, // { healthConditions, personality, specialNeeds }
     } = req.body || {};
 
-    if (!location || !location.address) {
-      return res.status(400).json({
-        success: false,
-        message: 'location.address is required',
-      });
-    }
-
     // Geocode địa chỉ careseeker nếu chưa có coordinates
-    let resolvedLocation = { ...location };
+    let resolvedLocation = location ? { ...location } : null;
     if (
+      resolvedLocation &&
       (!resolvedLocation.coordinates ||
         !Array.isArray(resolvedLocation.coordinates) ||
         resolvedLocation.coordinates.length !== 2) &&
@@ -392,6 +489,24 @@ const searchCaregivers = async (req, res, next) => {
       if (key && skillsMap[key]) skillsMap[key].push(s.skillName);
     });
 
+    // Lấy certificates cho caregivers từ bảng Certificate
+    const caregiverProfileIds = caregivers.map((c) => c._id);
+    const certificatesByCaregiver = await Certificate.find({
+      caregiverProfile: { $in: caregiverProfileIds },
+      status: 'approved' // Chỉ lấy certificates đã duyệt
+    })
+      .select('caregiverProfile name certificateType')
+      .lean();
+
+    const certificatesMap = caregiverProfileIds.reduce((acc, id) => {
+      acc[id.toString()] = [];
+      return acc;
+    }, {});
+    certificatesByCaregiver.forEach((cert) => {
+      const key = cert.caregiverProfile?.toString();
+      if (key && certificatesMap[key]) certificatesMap[key].push(cert.name);
+    });
+
     // Hàm Haversine (nếu có tọa độ)
     const haversineKm = (lat1, lon1, lat2, lon2) => {
       const R = 6371;
@@ -423,6 +538,7 @@ const searchCaregivers = async (req, res, next) => {
       .map((cg) => {
         const id = cg.user?._id?.toString() || cg.user?.toString();
         const cgSkills = skillsMap[id] || [];
+        const cgCertNames = (certificatesMap[cg._id?.toString()] || []).map(c => c?.toLowerCase());
         const expYears = cg.yearsOfExperience || 0;
 
         // Distance (nếu có tọa độ)
@@ -450,10 +566,9 @@ const searchCaregivers = async (req, res, next) => {
           return null;
         }
 
-        const certNames = cg.certificates?.map((c) => c.name?.toLowerCase()) || [];
         if (
           finalRequiredCerts.length > 0 &&
-          finalRequiredCerts.some((r) => !certNames.includes(r?.toLowerCase()))
+          finalRequiredCerts.some((r) => !cgCertNames.includes(r?.toLowerCase()))
         ) {
           return null;
         }
@@ -504,13 +619,13 @@ const searchCaregivers = async (req, res, next) => {
         let certScore = 0;
         if (finalRequiredCerts.length > 0) {
           const allHave = finalRequiredCerts.every((r) =>
-            certNames.includes(r?.toLowerCase())
+            cgCertNames.includes(r?.toLowerCase())
           );
           certScore += allHave ? weights.certificates * 0.7 : 0;
         }
         if (finalPreferredCerts.length > 0) {
           const prefMatched = finalPreferredCerts.filter((r) =>
-            certNames.includes(r?.toLowerCase())
+            cgCertNames.includes(r?.toLowerCase())
           ).length;
           certScore += Math.min(weights.certificates * 0.3, prefMatched * 2);
         }

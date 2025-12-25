@@ -28,21 +28,16 @@ exports.findMatchingCaregivers = asyncHandler(async (req, res) => {
     maxResults = 5
   } = req.body;
 
-  // Validate package
-  if (!packageId) {
-    return res.status(400).json({
-      success: false,
-      message: 'Package ID is required'
-    });
-  }
-
-  // Get package details
-  const packageData = await Package.findById(packageId);
-  if (!packageData) {
-    return res.status(404).json({
-      success: false,
-      message: 'Package not found'
-    });
+  // Get package details (optional)
+  let packageData = null;
+  if (packageId) {
+    packageData = await Package.findById(packageId);
+    if (!packageData) {
+      return res.status(404).json({
+        success: false,
+        message: 'Package not found'
+      });
+    }
   }
 
   // Get careseeker info
@@ -112,10 +107,10 @@ exports.findMatchingCaregivers = asyncHandler(async (req, res) => {
       address: 'Not specified',
       coordinates: [0, 0]
     },
-    packageType: packageData.packageType,
-    packagePrice: packageData.price,
-    packageServices: packageData.services,
-    packageDuration: packageData.duration,
+    packageType: packageData?.packageType || 'basic',
+    packagePrice: packageData?.price || 0,
+    packageServices: packageData?.services || [],
+    packageDuration: packageData?.duration || 0,
     preferences: finalPreferences
   };
 
@@ -136,12 +131,12 @@ exports.findMatchingCaregivers = asyncHandler(async (req, res) => {
     data: {
       matches: topMatches,
       totalCaregivers: caregiversWithDetails.length,
-      packageInfo: {
+      packageInfo: packageData ? {
         name: packageData.name,
         type: packageData.packageType,
         price: packageData.price,
         duration: packageData.duration
-      }
+      } : null
     },
     meta: {
       aiProvider: 'Groq (LLaMA 3.1 8B instant)',
@@ -159,23 +154,24 @@ exports.compareMatching = asyncHandler(async (req, res) => {
   const careseekerId = req.user._id;
   const { packageId } = req.body;
 
-  if (!packageId) {
-    return res.status(400).json({
-      success: false,
-      message: 'Package ID is required'
-    });
+  // Get package (optional)
+  let packageData = null;
+  if (packageId) {
+    packageData = await Package.findById(packageId);
+    if (!packageData) {
+      return res.status(404).json({
+        success: false,
+        message: 'Package not found'
+      });
+    }
   }
 
-  // Get package and careseeker
-  const [packageData, careseeker] = await Promise.all([
-    Package.findById(packageId),
-    User.findById(careseekerId)
-  ]);
-
-  if (!packageData || !careseeker) {
+  // Get careseeker
+  const careseeker = await User.findById(careseekerId);
+  if (!careseeker) {
     return res.status(404).json({
       success: false,
-      message: 'Package or careseeker not found'
+      message: 'Careseeker not found'
     });
   }
 
@@ -198,10 +194,10 @@ exports.compareMatching = asyncHandler(async (req, res) => {
       address: 'Not specified',
       coordinates: [0, 0]
     },
-    packageType: packageData.packageType,
-    packagePrice: packageData.price,
-    packageServices: packageData.services,
-    packageDuration: packageData.duration,
+    packageType: packageData?.packageType || 'basic',
+    packagePrice: packageData?.price || 0,
+    packageServices: packageData?.services || [],
+    packageDuration: packageData?.duration || 0,
     preferences: {}
   };
 
@@ -221,7 +217,7 @@ exports.compareMatching = asyncHandler(async (req, res) => {
     const aiMatchingService = require('../services/aiMatchingService');
     const startRule = Date.now();
     ruleMatches = await aiMatchingService.findBestMatches(careseekerId, {
-      requiredSkills: packageData.services || [],
+      requiredSkills: packageData?.services || [],
       topN: 5
     });
     ruleTime = Date.now() - startRule;
