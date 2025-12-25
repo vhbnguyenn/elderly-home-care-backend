@@ -19,7 +19,7 @@ exports.createReview = async (req, res, next) => {
     } = req.body;
 
     // Validate: User phải là careseeker
-    if (req.user.role !== ROLES.CARE_SEEKER) {
+    if (req.user.role !== ROLES.CARESEEKER) {
       return res.status(403).json({
         success: false,
         message: 'Chỉ careseeker mới có thể tạo review này'

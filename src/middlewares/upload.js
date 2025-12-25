@@ -90,12 +90,58 @@ const uploadVideo = multer({
   }
 });
 
+// Middleware cho course (thumbnail + instructor avatar)
+const uploadCourse = upload.fields([
+  { name: 'thumbnail', maxCount: 1 },
+  { name: 'instructorAvatar', maxCount: 1 }
+]);
+
+// Middleware cho upload single image - Optional
+const uploadSingleOptional = (req, res, next) => {
+  if (req.headers['content-type'] && req.headers['content-type'].includes('multipart/form-data')) {
+    return uploadSingle(req, res, next);
+  }
+  next();
+};
+
+// Middleware cho course - Optional
+const uploadCourseOptional = (req, res, next) => {
+  if (req.headers['content-type'] && req.headers['content-type'].includes('multipart/form-data')) {
+    return uploadCourse(req, res, next);
+  }
+  next();
+};
+
+// Middleware cho video - Optional
+const uploadVideoOptional = (req, res, next) => {
+  if (req.headers['content-type'] && req.headers['content-type'].includes('multipart/form-data')) {
+    return uploadVideo.single('video')(req, res, next);
+  }
+  next();
+};
+
+// Middleware cho upload feedback images (tối đa 5 ảnh)
+const uploadFeedbackImages = upload.array('images', 5);
+
+const uploadFeedbackImagesOptional = (req, res, next) => {
+  if (req.headers['content-type'] && req.headers['content-type'].includes('multipart/form-data')) {
+    return uploadFeedbackImages(req, res, next);
+  }
+  next();
+};
+
 module.exports = {
   upload,
   uploadCaregiverProfile,
   uploadCaregiverProfileOptional,
   uploadSingle,
+  uploadSingleOptional,
   uploadElderlyAvatar,
   uploadElderlyAvatarOptional,
-  uploadVideo // Thêm upload video
+  uploadVideo,
+  uploadVideoOptional,
+  uploadCourse,
+  uploadCourseOptional,
+  uploadFeedbackImages,
+  uploadFeedbackImagesOptional
 };

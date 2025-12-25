@@ -12,7 +12,6 @@ exports.createFeedback = async (req, res, next) => {
       priority,
       title,
       description,
-      attachments,
       deviceInfo,
       satisfactionRating,
       tags
@@ -26,6 +25,28 @@ exports.createFeedback = async (req, res, next) => {
       });
     }
 
+    // Xử lý attachments
+    let attachments = [];
+    
+    // Nếu có file upload từ local
+    if (req.files && req.files.length > 0) {
+      attachments = req.files.map(file => ({
+        url: file.path, // Cloudinary URL
+        type: 'image',
+        uploadedAt: new Date()
+      }));
+    }
+    // Nếu không có file upload, kiểm tra attachments từ body (URL string)
+    else if (req.body.attachments) {
+      try {
+        attachments = typeof req.body.attachments === 'string' 
+          ? JSON.parse(req.body.attachments) 
+          : req.body.attachments;
+      } catch (e) {
+        attachments = [];
+      }
+    }
+
     // Create feedback
     const feedback = await SystemFeedback.create({
       user: req.user._id,
@@ -34,10 +55,10 @@ exports.createFeedback = async (req, res, next) => {
       priority: priority || 'medium',
       title,
       description,
-      attachments: attachments || [],
-      deviceInfo,
+      attachments,
+      deviceInfo: deviceInfo ? (typeof deviceInfo === 'string' ? JSON.parse(deviceInfo) : deviceInfo) : undefined,
       satisfactionRating,
-      tags: tags || []
+      tags: tags ? (typeof tags === 'string' ? JSON.parse(tags) : tags) : []
     });
 
     await feedback.populate('user', 'name email role avatar');

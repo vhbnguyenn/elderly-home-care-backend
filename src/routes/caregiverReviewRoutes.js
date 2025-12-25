@@ -144,7 +144,7 @@ router.get('/my-reviews', protect, caregiverReviewController.getMyReviews);
  *       403:
  *         description: Forbidden - only careseekers can access
  */
-router.get('/received', protect, authorize(ROLES.CARE_SEEKER), caregiverReviewController.getReceivedReviews);
+router.get('/received', protect, authorize(ROLES.CARESEEKER), caregiverReviewController.getReceivedReviews);
 
 
 /**

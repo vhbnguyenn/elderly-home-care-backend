@@ -232,7 +232,55 @@ exports.createCourse = async (req, res) => {
 // Create course with modules and lessons in one API call
 exports.createCourseFull = async (req, res) => {
   try {
-    const { modules, ...courseData } = req.body;
+    let { modules, instructor, tags, ...courseData } = req.body;
+    
+    // Parse JSON strings nếu có (từ multipart/form-data)
+    if (typeof modules === 'string') {
+      try {
+        modules = JSON.parse(modules);
+      } catch (e) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid modules JSON format'
+        });
+      }
+    }
+    
+    if (typeof instructor === 'string') {
+      try {
+        courseData.instructor = JSON.parse(instructor);
+      } catch (e) {
+        courseData.instructor = instructor;
+      }
+    } else if (instructor) {
+      courseData.instructor = instructor;
+    }
+    
+    if (typeof tags === 'string') {
+      try {
+        courseData.tags = JSON.parse(tags);
+      } catch (e) {
+        courseData.tags = tags.split(',').map(t => t.trim());
+      }
+    } else if (tags) {
+      courseData.tags = tags;
+    }
+    
+    // Xử lý thumbnail upload từ local (nếu có)
+    if (req.files?.thumbnail) {
+      courseData.thumbnail = req.files.thumbnail[0].path; // Cloudinary URL
+    }
+    
+    // Xử lý instructor avatar upload từ local (nếu có)
+    if (req.files?.instructorAvatar) {
+      if (!courseData.instructor) {
+        courseData.instructor = {};
+      }
+      if (typeof courseData.instructor === 'string') {
+        courseData.instructor = JSON.parse(courseData.instructor);
+      }
+      courseData.instructor.avatar = req.files.instructorAvatar[0].path; // Cloudinary URL
+    }
     
     // Tạo course (không validate)
     const course = await Course.create({
@@ -337,7 +385,55 @@ exports.updateCourse = async (req, res) => {
 exports.updateCourseFull = async (req, res) => {
   try {
     const { id } = req.params;
-    const { modules, ...courseData } = req.body;
+    let { modules, instructor, tags, ...courseData } = req.body;
+    
+    // Parse JSON strings nếu có (từ multipart/form-data)
+    if (typeof modules === 'string') {
+      try {
+        modules = JSON.parse(modules);
+      } catch (e) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid modules JSON format'
+        });
+      }
+    }
+    
+    if (typeof instructor === 'string') {
+      try {
+        courseData.instructor = JSON.parse(instructor);
+      } catch (e) {
+        courseData.instructor = instructor;
+      }
+    } else if (instructor) {
+      courseData.instructor = instructor;
+    }
+    
+    if (typeof tags === 'string') {
+      try {
+        courseData.tags = JSON.parse(tags);
+      } catch (e) {
+        courseData.tags = tags.split(',').map(t => t.trim());
+      }
+    } else if (tags) {
+      courseData.tags = tags;
+    }
+    
+    // Xử lý thumbnail upload từ local (nếu có)
+    if (req.files?.thumbnail) {
+      courseData.thumbnail = req.files.thumbnail[0].path; // Cloudinary URL
+    }
+    
+    // Xử lý instructor avatar upload từ local (nếu có)
+    if (req.files?.instructorAvatar) {
+      if (!courseData.instructor) {
+        courseData.instructor = {};
+      }
+      if (typeof courseData.instructor === 'string') {
+        courseData.instructor = JSON.parse(courseData.instructor);
+      }
+      courseData.instructor.avatar = req.files.instructorAvatar[0].path; // Cloudinary URL
+    }
     
     // Lấy course (không check tồn tại)
     const course = await Course.findById(id);
