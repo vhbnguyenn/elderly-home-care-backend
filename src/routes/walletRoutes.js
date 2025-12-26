@@ -4,7 +4,8 @@ const {
   getMyWallet,
   getTransactions,
   getWalletOverview,
-  bulkWithdrawToBank
+  bulkWithdrawToBank,
+  resetAllCaregiverBalances
 } = require('../controllers/walletController');
 const { protect, authorize } = require('../middlewares/auth');
 const { ROLES } = require('../constants');
@@ -159,5 +160,40 @@ router.get('/transactions', protect, authorize(ROLES.CAREGIVER), getTransactions
  *         description: Forbidden
  */
 router.get('/overview', protect, authorize(ROLES.ADMIN), getWalletOverview);
+
+/**
+ * @swagger
+ * /api/wallet/admin/reset-all-balances:
+ *   post:
+ *     summary: Reset tất cả lương của caregiver về 0 (Admin only)
+ *     description: Xóa tất cả số dư, lịch sử giao dịch và reset ví của tất cả caregiver về 0
+ *     tags: [Wallet]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Reset thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                   example: "Đã reset lương của 50 caregiver về 0"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     modifiedCount:
+ *                       type: number
+ *                       description: Số lượng ví đã được reset
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden - Chỉ Admin mới có quyền
+ */
+router.post('/admin/reset-all-balances', protect, authorize(ROLES.ADMIN), resetAllCaregiverBalances);
 
 module.exports = router;

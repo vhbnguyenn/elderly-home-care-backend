@@ -3,12 +3,10 @@ const mongoose = require('mongoose');
 const lessonSchema = new mongoose.Schema({
   module: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'CourseModule',
-    required: true
+    ref: 'CourseModule'
   },
   title: {
     type: String,
-    required: [true, 'Tiêu đề bài học là bắt buộc'],
     trim: true
   },
   description: {

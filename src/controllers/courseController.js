@@ -283,10 +283,11 @@ exports.createCourseFull = async (req, res) => {
     }
     
     // Tạo course (không validate)
-    const course = await Course.create({
+    const course = new Course({
       ...courseData,
       createdBy: req.user._id
-    }, { runValidators: false, strict: false });
+    });
+    await course.save({ validateBeforeSave: false });
     
     const createdModules = [];
     const createdLessons = [];
@@ -297,19 +298,21 @@ exports.createCourseFull = async (req, res) => {
         const { lessons, ...moduleInfo } = moduleData;
         
         // Tạo module (không validate)
-        const module = await CourseModule.create({
+        const module = new CourseModule({
           ...moduleInfo,
           course: course._id
-        }, { runValidators: false, strict: false });
+        });
+        await module.save({ validateBeforeSave: false });
         createdModules.push(module);
         
         // Tạo lessons cho module này (không validate)
         if (lessons && Array.isArray(lessons)) {
           for (const lessonData of lessons) {
-            const lesson = await Lesson.create({
+            const lesson = new Lesson({
               ...lessonData,
               module: module._id
-            }, { runValidators: false, strict: false });
+            });
+            await lesson.save({ validateBeforeSave: false });
             createdLessons.push(lesson);
           }
         }
@@ -435,13 +438,22 @@ exports.updateCourseFull = async (req, res) => {
       courseData.instructor.avatar = req.files.instructorAvatar[0].path; // Cloudinary URL
     }
     
+    // Xử lý resources files upload (nếu có)
+    if (req.files?.resources && Array.isArray(req.files.resources)) {
+      courseData.resources = req.files.resources.map(file => ({
+        title: file.originalname,
+        url: file.path, // Cloudinary URL
+        type: getFileType(file.mimetype)
+      }));
+    }
+    
     // Lấy course (không check tồn tại)
     const course = await Course.findById(id);
     
     // Update course info (không validate)
     if (course) {
       Object.assign(course, courseData);
-      await course.save({ runValidators: false });
+      await course.save({ validateBeforeSave: false });
     }
     
     // Nếu có modules trong request, update modules và lessons
@@ -466,10 +478,11 @@ exports.updateCourseFull = async (req, res) => {
           newModuleIds.push(_id);
         } else {
           // Tạo module mới (không validate)
-          module = await CourseModule.create({
+          module = new CourseModule({
             ...moduleInfo,
             course: id
-          }, { runValidators: false, strict: false });
+          });
+          await module.save({ validateBeforeSave: false });
           newModuleIds.push(module._id.toString());
         }
         
@@ -493,10 +506,11 @@ exports.updateCourseFull = async (req, res) => {
               newLessonIds.push(lessonId);
             } else {
               // Tạo lesson mới (không validate)
-              lesson = await Lesson.create({
+              lesson = new Lesson({
                 ...lessonInfo,
                 module: module._id
-              }, { runValidators: false, strict: false });
+              });
+              await lesson.save({ validateBeforeSave: false });
               newLessonIds.push(lesson._id.toString());
             }
           }

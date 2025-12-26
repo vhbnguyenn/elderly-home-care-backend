@@ -3,12 +3,10 @@ const mongoose = require('mongoose');
 const courseSchema = new mongoose.Schema({
   title: {
     type: String,
-    required: [true, 'Tiêu đề khóa học là bắt buộc'],
     trim: true
   },
   description: {
-    type: String,
-    required: [true, 'Mô tả khóa học là bắt buộc']
+    type: String
   },
   thumbnail: {
     type: String,
@@ -16,8 +14,7 @@ const courseSchema = new mongoose.Schema({
   },
   instructor: {
     name: {
-      type: String,
-      required: true
+      type: String
     },
     title: {
       type: String,
@@ -65,6 +62,21 @@ const courseSchema = new mongoose.Schema({
   },
   tags: [{
     type: String
+  }],
+  resources: [{
+    title: {
+      type: String,
+      description: 'Tên tài liệu/file'
+    },
+    url: {
+      type: String,
+      description: 'Link download/view tài liệu'
+    },
+    type: {
+      type: String,
+      enum: ['pdf', 'doc', 'video', 'image', 'excel', 'other'],
+      description: 'Loại tài liệu'
+    }
   }],
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,

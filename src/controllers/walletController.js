@@ -4,6 +4,41 @@ const { ROLES } = require('../constants');
 
 const PLATFORM_FEE_PERCENTAGE = 15; // 15% phí nền tảng
 
+// @desc    Reset tất cả lương của caregiver về 0 (Admin only)
+// @route   POST /api/wallets/admin/reset-all-balances
+// @access  Admin
+const resetAllCaregiverBalances = async (req, res) => {
+  try {
+    // Reset tất cả wallet về 0
+    const result = await Wallet.updateMany(
+      {},
+      {
+        $set: {
+          availableBalance: 0,
+          totalEarnings: 0,
+          totalPlatformFees: 0,
+          pendingAmount: 0,
+          transactions: [],
+          lastUpdated: new Date()
+        }
+      }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: `Đã reset lương của ${result.modifiedCount} caregiver về 0`,
+      data: {
+        modifiedCount: result.modifiedCount
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
 // @desc    Xử lý tự động cộng tiền sau 24h khi booking hoàn tất và đã thanh toán
 // @note    Được gọi bởi cron job hoặc scheduler
 const processCompletedBookings = async () => {
@@ -293,5 +328,6 @@ module.exports = {
   addPendingAmount,
   getMyWallet,
   getTransactions,
-  getWalletOverview
+  getWalletOverview,
+  resetAllCaregiverBalances
 };

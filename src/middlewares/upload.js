@@ -82,6 +82,16 @@ const uploadElderlyAvatarOptional = (req, res, next) => {
   next();
 };
 
+// Cấu hình Cloudinary Storage cho documents/resources
+const documentStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'elderly-care/resources',
+    resource_type: 'auto',
+    allowed_formats: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png', 'mp4', 'mov', 'zip']
+  }
+});
+
 // Cấu hình upload video với giới hạn 100MB
 const uploadVideo = multer({
   storage: videoStorage,
@@ -94,6 +104,18 @@ const uploadVideo = multer({
 const uploadCourse = upload.fields([
   { name: 'thumbnail', maxCount: 1 },
   { name: 'instructorAvatar', maxCount: 1 }
+]);
+
+// Middleware cho course với resources
+const uploadCourseWithResources = multer({
+  storage: documentStorage,
+  limits: {
+    fileSize: 20 * 1024 * 1024 // 20MB per file
+  }
+}).fields([
+  { name: 'thumbnail', maxCount: 1 },
+  { name: 'instructorAvatar', maxCount: 1 },
+  { name: 'resources', maxCount: 50 }
 ]);
 
 // Middleware cho upload single image - Optional
@@ -142,6 +164,7 @@ module.exports = {
   uploadVideoOptional,
   uploadCourse,
   uploadCourseOptional,
+  uploadCourseWithResources,
   uploadFeedbackImages,
   uploadFeedbackImagesOptional
 };
