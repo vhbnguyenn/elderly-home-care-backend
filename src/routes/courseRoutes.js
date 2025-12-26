@@ -4,7 +4,7 @@ const courseController = require('../controllers/courseController');
 const enrollmentController = require('../controllers/enrollmentController');
 const { protect, authorize, protectOptional } = require('../middlewares/auth');
 const { ROLES } = require('../constants/roles');
-const { uploadVideo, uploadCourse } = require('../middlewares/upload');
+const { uploadVideo, uploadCourse, uploadCourseWithResources } = require('../middlewares/upload');
 
 /**
  * @swagger
@@ -233,7 +233,9 @@ router.post('/admin/upload-video', protect, authorize(ROLES.ADMIN), uploadVideo.
  * /api/courses/admin/create-full:
  *   post:
  *     summary: Tạo khóa học kèm modules và lessons trong 1 API (Admin)
- *     description: Tạo khóa học, modules và lessons tất cả trong 1 request
+ *     description: |
+ *       Tạo khóa học, modules và lessons tất cả trong 1 request.
+ *       Hỗ trợ upload thumbnail và instructor avatar lên Cloudinary.
  *     tags: [Courses]
  *     security:
  *       - bearerAuth: []
@@ -243,9 +245,6 @@ router.post('/admin/upload-video', protect, authorize(ROLES.ADMIN), uploadVideo.
  *         multipart/form-data:
  *           schema:
  *             type: object
- *             required:
- *               - title
- *               - description
  *             properties:
  *               thumbnail:
  *                 type: string
@@ -255,6 +254,12 @@ router.post('/admin/upload-video', protect, authorize(ROLES.ADMIN), uploadVideo.
  *                 type: string
  *                 format: binary
  *                 description: File ảnh avatar giảng viên (jpg, jpeg, png, tối đa 5MB)
+ *               resources:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: binary
+ *                 description: Upload tài liệu khóa học (pdf, doc, video, image, excel... - Tối đa 50 files, mỗi file 20MB)
  *               title:
  *                 type: string
  *                 example: "Chăm sóc người già cơ bản"
@@ -276,10 +281,13 @@ router.post('/admin/upload-video', protect, authorize(ROLES.ADMIN), uploadVideo.
  *                 type: string
  *                 description: JSON array string của tags
  *                 example: '["chăm sóc", "người già"]'
+ *               isPublished:
+ *                 type: boolean
+ *                 example: true
  *               modules:
  *                 type: string
  *                 description: JSON array string của modules kèm lessons
- *                 example: '[{"title":"Module 1: Giới thiệu","description":"Giới thiệu về chăm sóc người già","order":1,"lessons":[{"title":"Bài 1: Tổng quan","description":"Bài học đầu tiên","content":"Nội dung bài học...","videoUrl":"https://example.com/video.mp4","duration":1800,"order":1}]}]'
+ *                 example: '[{"title":"Module 1: Giới thiệu","description":"Giới thiệu về chăm sóc người già","order":1,"lessons":[{"title":"Bài 1: Tổng quan","description":"Bài học đầu tiên","content":"Nội dung bài học...","videoUrl":"https://example.com/video.mp4","duration":30,"order":1}]}]'
  *         application/json:
  *           schema:
  *             type: object
@@ -319,7 +327,7 @@ router.post('/admin/upload-video', protect, authorize(ROLES.ADMIN), uploadVideo.
  *       201:
  *         description: Tạo khóa học kèm modules và lessons thành công
  */
-router.post('/admin/create-full', protect, authorize(ROLES.ADMIN), uploadCourse, courseController.createCourseFull);
+router.post('/admin/create-full', protect, authorize(ROLES.ADMIN), uploadCourseWithResources, courseController.createCourseFull);
 
 /**
  * @swagger
@@ -356,6 +364,12 @@ router.post('/admin/create-full', protect, authorize(ROLES.ADMIN), uploadCourse,
  *                 type: string
  *                 format: binary
  *                 description: File ảnh avatar giảng viên mới (optional, jpg, jpeg, png, tối đa 5MB)
+ *               resources:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: binary
+ *                 description: Upload tài liệu khóa học mới (optional, pdf, doc, video, image, excel... - Tối đa 50 files, mỗi file 20MB)
  *               title:
  *                 type: string
  *                 example: "Chăm sóc người già cơ bản (Updated)"
@@ -375,6 +389,8 @@ router.post('/admin/create-full', protect, authorize(ROLES.ADMIN), uploadCourse,
  *                 type: string
  *                 description: JSON array string của tags
  *                 example: '["chăm sóc", "người già"]'
+ *               isPublished:
+ *                 type: boolean
  *               modules:
  *                 type: string
  *                 description: JSON array string của modules. Có _id = update, không có _id = tạo mới
@@ -410,7 +426,7 @@ router.post('/admin/create-full', protect, authorize(ROLES.ADMIN), uploadCourse,
  *       404:
  *         description: Không tìm thấy khóa học
  */
-router.put('/admin/:id/update-full', protect, authorize(ROLES.ADMIN), uploadCourse, courseController.updateCourseFull);
+router.put('/admin/:id/update-full', protect, authorize(ROLES.ADMIN), uploadCourseWithResources, courseController.updateCourseFull);
 
 /**
  * @swagger
