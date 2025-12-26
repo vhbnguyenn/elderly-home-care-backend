@@ -31,6 +31,7 @@ const courseRoutes = require('./routes/courseRoutes');
 const groqMatchingRoutes = require('./routes/groqMatchingRoutes');
 const elderlyRoutes = require('./routes/elderlyRoutes');
 const adminWithdrawalRoutes = require('./routes/adminWithdrawalRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
 const { startWalletCronJob } = require('./utils/walletCron');
 const { initializeFirebase } = require('./utils/fcmHelper');
 
@@ -89,6 +90,7 @@ app.use('/api/courses', courseRoutes);
 app.use('/api/groq-matching', groqMatchingRoutes);
 app.use('/api/elderly', elderlyRoutes);
 app.use('/api/admin-withdrawal', adminWithdrawalRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 app.get('/', (req, res) => {
   res.json({
