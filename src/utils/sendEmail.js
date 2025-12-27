@@ -1,17 +1,19 @@
 const nodemailer = require('nodemailer');
+const axios = require('axios');
 
 /**
  * Create nodemailer transporter with Brevo SMTP
  */
 const createTransporter = () => {
-  const port = parseInt(process.env.EMAIL_PORT);
+  const port = parseInt(process.env.EMAIL_PORT) || 587;
+  const emailUser = process.env.BREVO_LOGIN || process.env.EMAIL_USER;
   
   return nodemailer.createTransport({
-    host: process.env.EMAIL_HOST,
+    host: process.env.EMAIL_HOST || 'smtp-relay.brevo.com',
     port: port,
     secure: port === 465, // true for 465, false for 587
     auth: {
-      user: process.env.EMAIL_USER,
+      user: emailUser,
       pass: process.env.EMAIL_PASSWORD,
     },
     tls: {
@@ -24,16 +26,50 @@ const createTransporter = () => {
 };
 
 /**
- * Send email using Brevo SMTP
+ * Send email using Brevo API (fallback method)
+ */
+const sendEmailViaBrevoAPI = async (to, subject, htmlContent) => {
+  try {
+    const response = await axios.post(
+      'https://api.brevo.com/v3/smtp/email',
+      {
+        sender: {
+          name: 'Elderly Home Care',
+          email: process.env.EMAIL_USER || 'elderly2612@gmail.com'
+        },
+        to: [{ email: to }],
+        subject: subject,
+        htmlContent: htmlContent
+      },
+      {
+        headers: {
+          'api-key': process.env.BREVO_API_KEY,
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000
+      }
+    );
+    
+    console.log('✅ Email sent via Brevo API:', response.data);
+    return true;
+  } catch (error) {
+    console.error('❌ Brevo API error:', error.response?.data || error.message);
+    return false;
+  }
+};
+
+/**
+ * Send email using Brevo SMTP with API fallback
  */
 const sendEmailViaSMTP = async (to, subject, htmlContent) => {
+  // Try SMTP first
   try {
     const transporter = createTransporter();
     
     const mailOptions = {
       from: {
         name: 'Elderly Home Care',
-        address: process.env.EMAIL_USER
+        address: process.env.BREVO_LOGIN || process.env.EMAIL_USER
       },
       to: to,
       subject: subject,
@@ -45,10 +81,19 @@ const sendEmailViaSMTP = async (to, subject, htmlContent) => {
     return true;
   } catch (error) {
     console.error('❌ Brevo SMTP error:', error.message);
-    console.error('Error details:', error);
+    console.log('⚠️ Trying Brevo API as fallback...');
+    
+    // Fallback to Brevo API
+    try {
+      const apiResult = await sendEmailViaBrevoAPI(to, subject, htmlContent);
+      if (apiResult) {
+        return true;
+      }
+    } catch (apiError) {
+      console.error('❌ Brevo API fallback also failed:', apiError.message);
+    }
     
     // Không throw error để không làm crash app
-    // Chỉ log lỗi và tiếp tục
     console.log('⚠️ Email sending failed but continuing...');
     return false;
   }
