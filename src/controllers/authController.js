@@ -308,22 +308,63 @@ const verifyCode = async (req, res, next) => {
   try {
     const { email, code } = req.body;
 
+    console.log('🔍 Verify code request:', { email, code, codeType: typeof code });
+
     // Trim và lowercase email
     const normalizedEmail = email.trim().toLowerCase();
 
-    // Tìm user với email và code hợp lệ
-    const user = await User.findOne({
-      email: normalizedEmail,
-      verificationCode: code,
-      verificationCodeExpire: { $gt: Date.now() }
-    }).select('+verificationCode +verificationCodeExpire');
+    // Tìm user với email trước để debug
+    const userByEmail = await User.findOne({ email: normalizedEmail })
+      .select('+verificationCode +verificationCodeExpire');
 
-    if (!user) {
+    if (!userByEmail) {
+      console.log('❌ User not found with email:', normalizedEmail);
       return res.status(400).json({
         success: false,
-        message: 'Mã xác minh không hợp lệ hoặc đã hết hạn'
+        message: 'Không tìm thấy người dùng với email này'
       });
     }
+
+    console.log('✅ User found:', {
+      email: userByEmail.email,
+      storedCode: userByEmail.verificationCode,
+      storedCodeType: typeof userByEmail.verificationCode,
+      receivedCode: code,
+      receivedCodeType: typeof code,
+      codeExpire: userByEmail.verificationCodeExpire,
+      now: Date.now(),
+      isExpired: userByEmail.verificationCodeExpire < Date.now()
+    });
+
+    // Convert both codes to string for comparison
+    const storedCode = String(userByEmail.verificationCode || '');
+    const receivedCode = String(code || '').trim();
+
+    console.log('🔍 String comparison:', {
+      storedCode,
+      receivedCode,
+      match: storedCode === receivedCode
+    });
+
+    // Check expiry
+    if (!userByEmail.verificationCodeExpire || userByEmail.verificationCodeExpire < Date.now()) {
+      console.log('❌ Code expired');
+      return res.status(400).json({
+        success: false,
+        message: 'Mã xác minh đã hết hạn. Vui lòng yêu cầu mã mới.'
+      });
+    }
+
+    // Check code match
+    if (storedCode !== receivedCode) {
+      console.log('❌ Code mismatch');
+      return res.status(400).json({
+        success: false,
+        message: 'Mã xác minh không đúng'
+      });
+    }
+
+    const user = userByEmail;
 
     // Cập nhật user: verify email và xóa code
     console.log('🔍 Before update:', { 
