@@ -232,13 +232,62 @@ exports.createCourse = async (req, res) => {
 // Create course with modules and lessons in one API call
 exports.createCourseFull = async (req, res) => {
   try {
-    const { modules, ...courseData } = req.body;
+    let { modules, instructor, tags, ...courseData } = req.body;
+    
+    // Parse JSON strings nếu có (từ multipart/form-data)
+    if (typeof modules === 'string') {
+      try {
+        modules = JSON.parse(modules);
+      } catch (e) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid modules JSON format'
+        });
+      }
+    }
+    
+    if (typeof instructor === 'string') {
+      try {
+        courseData.instructor = JSON.parse(instructor);
+      } catch (e) {
+        courseData.instructor = instructor;
+      }
+    } else if (instructor) {
+      courseData.instructor = instructor;
+    }
+    
+    if (typeof tags === 'string') {
+      try {
+        courseData.tags = JSON.parse(tags);
+      } catch (e) {
+        courseData.tags = tags.split(',').map(t => t.trim());
+      }
+    } else if (tags) {
+      courseData.tags = tags;
+    }
+    
+    // Xử lý thumbnail upload từ local (nếu có)
+    if (req.files?.thumbnail) {
+      courseData.thumbnail = req.files.thumbnail[0].path; // Cloudinary URL
+    }
+    
+    // Xử lý instructor avatar upload từ local (nếu có)
+    if (req.files?.instructorAvatar) {
+      if (!courseData.instructor) {
+        courseData.instructor = {};
+      }
+      if (typeof courseData.instructor === 'string') {
+        courseData.instructor = JSON.parse(courseData.instructor);
+      }
+      courseData.instructor.avatar = req.files.instructorAvatar[0].path; // Cloudinary URL
+    }
     
     // Tạo course (không validate)
-    const course = await Course.create({
+    const course = new Course({
       ...courseData,
       createdBy: req.user._id
-    }, { runValidators: false, strict: false });
+    });
+    await course.save({ validateBeforeSave: false });
     
     const createdModules = [];
     const createdLessons = [];
@@ -249,19 +298,21 @@ exports.createCourseFull = async (req, res) => {
         const { lessons, ...moduleInfo } = moduleData;
         
         // Tạo module (không validate)
-        const module = await CourseModule.create({
+        const module = new CourseModule({
           ...moduleInfo,
           course: course._id
-        }, { runValidators: false, strict: false });
+        });
+        await module.save({ validateBeforeSave: false });
         createdModules.push(module);
         
         // Tạo lessons cho module này (không validate)
         if (lessons && Array.isArray(lessons)) {
           for (const lessonData of lessons) {
-            const lesson = await Lesson.create({
+            const lesson = new Lesson({
               ...lessonData,
               module: module._id
-            }, { runValidators: false, strict: false });
+            });
+            await lesson.save({ validateBeforeSave: false });
             createdLessons.push(lesson);
           }
         }
@@ -337,7 +388,64 @@ exports.updateCourse = async (req, res) => {
 exports.updateCourseFull = async (req, res) => {
   try {
     const { id } = req.params;
-    const { modules, ...courseData } = req.body;
+    let { modules, instructor, tags, ...courseData } = req.body;
+    
+    // Parse JSON strings nếu có (từ multipart/form-data)
+    if (typeof modules === 'string') {
+      try {
+        modules = JSON.parse(modules);
+      } catch (e) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid modules JSON format'
+        });
+      }
+    }
+    
+    if (typeof instructor === 'string') {
+      try {
+        courseData.instructor = JSON.parse(instructor);
+      } catch (e) {
+        courseData.instructor = instructor;
+      }
+    } else if (instructor) {
+      courseData.instructor = instructor;
+    }
+    
+    if (typeof tags === 'string') {
+      try {
+        courseData.tags = JSON.parse(tags);
+      } catch (e) {
+        courseData.tags = tags.split(',').map(t => t.trim());
+      }
+    } else if (tags) {
+      courseData.tags = tags;
+    }
+    
+    // Xử lý thumbnail upload từ local (nếu có)
+    if (req.files?.thumbnail) {
+      courseData.thumbnail = req.files.thumbnail[0].path; // Cloudinary URL
+    }
+    
+    // Xử lý instructor avatar upload từ local (nếu có)
+    if (req.files?.instructorAvatar) {
+      if (!courseData.instructor) {
+        courseData.instructor = {};
+      }
+      if (typeof courseData.instructor === 'string') {
+        courseData.instructor = JSON.parse(courseData.instructor);
+      }
+      courseData.instructor.avatar = req.files.instructorAvatar[0].path; // Cloudinary URL
+    }
+    
+    // Xử lý resources files upload (nếu có)
+    if (req.files?.resources && Array.isArray(req.files.resources)) {
+      courseData.resources = req.files.resources.map(file => ({
+        title: file.originalname,
+        url: file.path, // Cloudinary URL
+        type: getFileType(file.mimetype)
+      }));
+    }
     
     // Lấy course (không check tồn tại)
     const course = await Course.findById(id);
@@ -345,7 +453,7 @@ exports.updateCourseFull = async (req, res) => {
     // Update course info (không validate)
     if (course) {
       Object.assign(course, courseData);
-      await course.save({ runValidators: false });
+      await course.save({ validateBeforeSave: false });
     }
     
     // Nếu có modules trong request, update modules và lessons
@@ -370,10 +478,11 @@ exports.updateCourseFull = async (req, res) => {
           newModuleIds.push(_id);
         } else {
           // Tạo module mới (không validate)
-          module = await CourseModule.create({
+          module = new CourseModule({
             ...moduleInfo,
             course: id
-          }, { runValidators: false, strict: false });
+          });
+          await module.save({ validateBeforeSave: false });
           newModuleIds.push(module._id.toString());
         }
         
@@ -397,10 +506,11 @@ exports.updateCourseFull = async (req, res) => {
               newLessonIds.push(lessonId);
             } else {
               // Tạo lesson mới (không validate)
-              lesson = await Lesson.create({
+              lesson = new Lesson({
                 ...lessonInfo,
                 module: module._id
-              }, { runValidators: false, strict: false });
+              });
+              await lesson.save({ validateBeforeSave: false });
               newLessonIds.push(lesson._id.toString());
             }
           }
@@ -613,6 +723,36 @@ exports.updateLesson = async (req, res) => {
       success: true,
       message: 'Cập nhật bài học thành công',
       data: lesson
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// Upload video to Cloudinary
+exports.uploadVideo = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Vui lòng chọn file video để upload'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Upload video thành công',
+      data: {
+        videoUrl: req.file.path,
+        videoProvider: 'cloudinary',
+        publicId: req.file.filename,
+        duration: req.file.duration || null,
+        format: req.file.format,
+        size: req.file.size
+      }
     });
   } catch (error) {
     res.status(400).json({

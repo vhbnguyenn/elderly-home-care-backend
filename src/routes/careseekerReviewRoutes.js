@@ -87,7 +87,7 @@ const { ROLES } = require('../constants');
  *       404:
  *         description: Booking not found
  */
-router.post('/', protect, authorize(ROLES.CARE_SEEKER), careseekerReviewController.createReview);
+router.post('/', protect, authorize(ROLES.CARESEEKER), careseekerReviewController.createReview);
 
 /**
  * @swagger

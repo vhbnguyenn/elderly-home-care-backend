@@ -55,16 +55,20 @@ async function getTopMatches(careseekerData, caregivers) {
 
     // Parse response
     const aiResponse = response.data.choices[0].message.content;
+    console.log('🤖 Groq AI Response:', aiResponse.substring(0, 500));
+    
     const matchResults = JSON.parse(aiResponse);
+    console.log('📊 Parsed matches count:', matchResults.matches?.length);
+    console.log('📊 First match sample:', matchResults.matches?.[0]);
 
     // Return top matches with caregiver details
     return matchResults.matches.map(match => {
       const caregiver = caregivers.find(c => c._id.toString() === match.caregiverId);
       return {
         caregiver: caregiver || match.caregiverId,
-        matchScore: match.score,
-        reasons: match.reasons,
-        aiAnalysis: match.analysis
+        matchScore: match.score || match.matchScore || 0,
+        reasons: match.reasons || [],
+        aiAnalysis: match.analysis || match.reasoning || ''
       };
     });
 
@@ -113,19 +117,45 @@ SERVICE PACKAGE:
 
 PREFERENCES:
 - Gender preference: ${preferences.gender || 'No preference'}
-- Min experience: ${preferences.experienceYears || 0} years
+- Min experience: ${preferences.minExperience || preferences.experienceYears || 0} years
 - Language: ${preferences.language || 'Vietnamese'}
-- Special requirements: ${preferences.specialRequirements || 'None'}
+- Special requirements: ${preferences.specialRequirements || preferences.specialNeeds || 'General elderly care'}
+
+MATCHING INSTRUCTIONS:
+- If no specific services are listed, match based on experience, education, and certificates
+- Prioritize caregivers with relevant certificates (điều dưỡng, chăm sóc người già, hộ lý)
+- Consider education level (đại học > cao đẳng > trung học phổ thông)
+- Experience is important - more years = better match
+- Location proximity matters
+- Even if skills list is empty, evaluate based on profile completeness, certificates, and education
+
+**CERTIFICATE MATCHING RULES:**
+- Be flexible with certificate matching - use semantic understanding
+- Synonyms and related certificates should be considered:
+  * "Hộ lý" matches: hộ lý, điều dưỡng, chăm sóc người già, nursing
+  * "Điều dưỡng" matches: điều dưỡng, điều dưỡng viên, nursing, hộ lý
+  * "Chăm sóc người già" matches: chăm sóc người cao tuổi, elderly care, geriatric care, hộ lý
+  * "Sơ cấp cứu" matches: first aid, cấp cứu, emergency care
+  * "Vật lý trị liệu" matches: physical therapy, phục hồi chức năng, rehabilitation
+- Partial matches count: "Chứng chỉ Điều dưỡng viên hạng 1" matches requirement "điều dưỡng"
+- Look at both certificate NAME and TYPE fields
+- Vietnamese diacritics variations are acceptable (e.g., "hộ lý" = "ho ly")
 `;
 
   // Build caregivers info section (ưu tiên dữ liệu thật từ profile và skills)
   const caregiversInfo = caregivers.map((c, idx) => {
-    const displayName = c.name || c.profile?.fullName || c.profile?.permanentAddress || `Caregiver ${idx + 1}`;
+    const displayName = c.name || c.fullName || c.profile?.fullName || c.email?.split('@')[0] || `Caregiver ${idx + 1}`;
     const yearsExp = c.profile?.yearsOfExperience ?? 'N/A';
     const address = c.profile?.permanentAddress || c.profile?.temporaryAddress || 'N/A';
     const gender = c.profile?.gender || 'N/A';
     const education = c.profile?.education || 'N/A';
-    const certificatesCount = Array.isArray(c.profile?.certificates) ? c.profile.certificates.length : 0;
+    
+    // Extract certificates details
+    const certificates = Array.isArray(c.profile?.certificates) ? c.profile.certificates : [];
+    const certificatesList = certificates.length > 0 
+      ? certificates.map(cert => `"${cert.name}" (${cert.certificateType || 'general'})`).join(', ')
+      : 'None';
+    
     const skillsList = c.skills?.map(s => s.skillName).join(', ') || 'None';
     const availability = c.availability?.isAvailable ? 'Yes' : 'No';
     return `
@@ -138,7 +168,8 @@ ID: ${c._id}
 - Education: ${education}
 - Address: ${address}
 - Skills: ${skillsList}
-- Certificates: ${certificatesCount}
+- Certificates: ${certificatesList}
+- Certificate count: ${certificates.length}
 - Average Rating: ${c.profile?.averageRating || 0}/5
 - Total Reviews: ${c.profile?.totalReviews || 0}
 - Is Available: ${availability}
@@ -155,16 +186,23 @@ ${caregiversInfo}
 
 TASK:
 =====
-Analyze all caregivers and select the TOP 5 BEST MATCHES for this careseeker.
+Analyze all caregivers and select the TOP BEST MATCHES for this careseeker.
 
-Consider these factors:
-1. Skills match with required services (MOST IMPORTANT)
-2. Experience level vs preferences
-3. Location proximity (closer is better)
-4. Gender preference
-5. Availability
-6. Ratings and reviews
-7. Price appropriateness for package type
+**IMPORTANT MATCHING RULES:**
+- Even if Skills list is empty, you MUST still match based on other factors
+- If no specific services are required, match based on: Experience, Education, Certificates, Location
+- DO NOT return score = 0 unless the caregiver has NO profile at all
+- Give reasonable scores (40-100) based on available information
+
+Consider these factors (in order of importance):
+1. **Experience**: More years = higher score (3+ years is good)
+2. **Education**: Đại học > Cao đẳng > Trung học phổ thông
+3. **Certificates**: Relevant certificates (điều dưỡng, chăm sóc người già, hộ lý) boost score
+4. **Location proximity**: Closer is better (same district = bonus)
+5. **Profile completeness**: Complete profile with photos = more trustworthy
+6. **Skills**: If available, match with required services
+7. **Gender preference**: Match if specified
+8. **Availability**: Consider if data available
 
 For each match, provide:
 - Caregiver ID (USE EXACT ID FROM LIST ABOVE, DO NOT INVENT)
@@ -174,11 +212,18 @@ For each match, provide:
 
 IMPORTANT: 
 - Use ONLY the caregivers provided above. DO NOT create new caregiver IDs.
-- Return EXACTLY 5 matches (or less if fewer caregivers available)
+- Return ALL available matches (up to 5 max)
 - Sort by match score (highest first)
-- Be specific in reasons (mention actual skills, experience, etc.)
-- Consider distance/location seriously
-- If there are fewer than 5 caregivers provided, return as many as available (do not invent).
+- Be specific in reasons (mention actual experience, education, certificates, location)
+- **DO NOT return score = 0 unless caregiver has absolutely NO information**
+- **Give reasonable scores based on what IS available, not what's missing**
+- If fewer caregivers provided, return as many as available
+- Example scores:
+  * 5+ years exp + đại học + certificates = 85-95
+  * 3+ years exp + cao đẳng + certificates = 70-80
+  * 2+ years exp + THPT + certificates = 60-70
+  * Profile complete but minimal exp = 50-60
+  * Incomplete profile = 40-50
 
 Return response in this EXACT JSON format:
 {
