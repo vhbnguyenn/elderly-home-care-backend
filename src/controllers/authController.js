@@ -34,13 +34,17 @@ const register = async (req, res, next) => {
     });
 
     // Tạo mã verification code (6 số)
-    const verificationCode = user.generateVerificationCode();
-    console.log('📧 [Register] Generated code:', verificationCode);
+    user.generateVerificationCode();
+    console.log('📧 [Register] Generated code (before save):', user.verificationCode);
     console.log('📧 [Register] User email:', user.email);
     
     await user.save();
     
-    console.log('📧 [Register] Code after save:', user.verificationCode);
+    // ✅ Fetch lại user để đảm bảo lấy đúng code từ DB
+    const savedUser = await User.findById(user._id).select('+verificationCode');
+    const verificationCode = savedUser.verificationCode;
+    
+    console.log('📧 [Register] Code from DB after save:', verificationCode);
 
     // Gửi email verification code
     // Dùng email làm tên tạm nếu chưa có name
