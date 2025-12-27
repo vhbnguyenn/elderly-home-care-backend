@@ -476,9 +476,15 @@ const resendVerification = async (req, res, next) => {
       });
     }
 
-    // Tạo code mới
+    // Tạo code mới (sẽ OVERWRITE code cũ)
     const verificationCode = user.generateVerificationCode();
     await user.save();
+
+    console.log('📧 New verification code generated:', {
+      email: user.email,
+      code: verificationCode,
+      expireTime: new Date(user.verificationCodeExpire)
+    });
 
     // Gửi email
     try {
@@ -486,7 +492,7 @@ const resendVerification = async (req, res, next) => {
       
       // In ra console trong dev mode để dễ debug
       if (process.env.NODE_ENV === 'development') {
-        console.log('📧 [DEV MODE] Verification Code:', verificationCode);
+        console.log('📧 [DEV MODE] NEW Verification Code:', verificationCode);
         console.log('📧 Email:', user.email);
       }
     } catch (error) {
@@ -499,7 +505,7 @@ const resendVerification = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: 'Đã gửi mã xác minh',
+      message: 'Đã gửi mã xác minh mới',
       ...(process.env.NODE_ENV === 'development' && { debug_code: verificationCode })
     });
 
