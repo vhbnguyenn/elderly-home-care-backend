@@ -122,6 +122,11 @@ const bookingSchema = new mongoose.Schema(
         enum: ['payos', 'cash'],
         default: null
       },
+      paymentCode: {
+        type: String, // Mã thanh toán dễ nhớ (VD: PAY-ABC123)
+        trim: true,
+        uppercase: true
+      },
       transactionId: {
         type: String,
         trim: true
@@ -131,6 +136,9 @@ const bookingSchema = new mongoose.Schema(
       },
       qrCode: {
         type: String // URL của QR code
+      },
+      paymentUrl: {
+        type: String // Link thanh toán
       },
       transferredToCaregiver: {
         type: Boolean,
