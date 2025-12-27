@@ -476,9 +476,31 @@ const resendVerification = async (req, res, next) => {
       });
     }
 
-    // Tạo code mới
+    // Tạo code mới (sẽ OVERWRITE code cũ)
     const verificationCode = user.generateVerificationCode();
-    await user.save();
+    
+    // Mark fields as modified (vì có select: false)
+    user.markModified('verificationCode');
+    user.markModified('verificationCodeExpire');
+    
+    // Force save với validation disabled
+    try {
+      await user.save({ validateBeforeSave: false });
+      console.log('✅ User saved successfully with new code');
+    } catch (saveError) {
+      console.error('❌ Error saving user:', saveError);
+      throw saveError;
+    }
+
+    // Verify code was actually saved to DB
+    const verifiedUser = await User.findById(user._id).select('+verificationCode +verificationCodeExpire');
+    console.log('📧 New verification code generated:', {
+      email: user.email,
+      generatedCode: verificationCode,
+      storedCodeInDB: verifiedUser.verificationCode, // Should match generatedCode
+      expireTime: new Date(verifiedUser.verificationCodeExpire),
+      match: verificationCode === verifiedUser.verificationCode
+    });
 
     // Gửi email
     try {
@@ -486,7 +508,7 @@ const resendVerification = async (req, res, next) => {
       
       // In ra console trong dev mode để dễ debug
       if (process.env.NODE_ENV === 'development') {
-        console.log('📧 [DEV MODE] Verification Code:', verificationCode);
+        console.log('📧 [DEV MODE] NEW Verification Code:', verificationCode);
         console.log('📧 Email:', user.email);
       }
     } catch (error) {
@@ -499,7 +521,7 @@ const resendVerification = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: 'Đã gửi mã xác minh',
+      message: 'Đã gửi mã xác minh mới',
       ...(process.env.NODE_ENV === 'development' && { debug_code: verificationCode })
     });
 
