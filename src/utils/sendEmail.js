@@ -1,54 +1,34 @@
-const nodemailer = require('nodemailer');
+const axios = require('axios');
 
 /**
- * Create nodemailer transporter with Brevo SMTP
+ * Send email using Brevo API
  */
-const createTransporter = () => {
-  const port = parseInt(process.env.EMAIL_PORT);
-  
-  return nodemailer.createTransport({
-    host: process.env.EMAIL_HOST,
-    port: port,
-    secure: port === 465, // true for 465, false for 587
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASSWORD,
-    },
-    tls: {
-      rejectUnauthorized: false
-    },
-    connectionTimeout: 10000, // 10 seconds
-    greetingTimeout: 10000,
-    socketTimeout: 10000
-  });
-};
-
-/**
- * Send email using Brevo SMTP
- */
-const sendEmailViaSMTP = async (to, subject, htmlContent) => {
+const sendEmail = async (to, subject, htmlContent) => {
   try {
-    const transporter = createTransporter();
-    
-    const mailOptions = {
-      from: {
-        name: 'Elderly Home Care',
-        address: process.env.EMAIL_USER
+    const response = await axios.post(
+      'https://api.brevo.com/v3/smtp/email',
+      {
+        sender: {
+          name: 'Elderly Home Care',
+          email: process.env.EMAIL_USER || 'elderly2612@gmail.com'
+        },
+        to: [{ email: to }],
+        subject: subject,
+        htmlContent: htmlContent
       },
-      to: to,
-      subject: subject,
-      html: htmlContent
-    };
-
-    const info = await transporter.sendMail(mailOptions);
-    console.log('✅ Email sent via Brevo SMTP:', info.messageId);
+      {
+        headers: {
+          'api-key': process.env.BREVO_API_KEY,
+          'Content-Type': 'application/json'
+        },
+        timeout: 15000 // 15 seconds
+      }
+    );
+    
+    console.log('✅ Email sent via Brevo API:', response.data.messageId);
     return true;
   } catch (error) {
-    console.error('❌ Brevo SMTP error:', error.message);
-    console.error('Error details:', error);
-    
-    // Không throw error để không làm crash app
-    // Chỉ log lỗi và tiếp tục
+    console.error('❌ Brevo API error:', error.response?.data || error.message);
     console.log('⚠️ Email sending failed but continuing...');
     return false;
   }
@@ -79,7 +59,7 @@ const sendVerificationCode = async (email, name, code) => {
       </div>
     `;
 
-    await sendEmailViaSMTP(email, 'Your Verification Code', htmlContent);
+    await sendEmail(email, 'Your Verification Code', htmlContent);
     
     // In ra console trong dev mode để dễ debug
     if (process.env.NODE_ENV === 'development') {
@@ -121,7 +101,7 @@ const sendWelcomeEmail = async (email, name) => {
       </div>
     `;
     
-    await sendEmailViaSMTP(email, 'Welcome to Elderly Home Care!', htmlContent);
+    await sendEmail(email, 'Welcome to Elderly Home Care!', htmlContent);
     console.log('✅ Welcome email sent');
     
   } catch (error) {
@@ -160,7 +140,7 @@ const sendResetPasswordCode = async (email, name, code) => {
       </div>
     `;
     
-    await sendEmailViaSMTP(email, 'Reset Your Password', htmlContent);
+    await sendEmail(email, 'Reset Your Password', htmlContent);
     console.log('✅ Reset password code sent to:', email);
     return true;
     
