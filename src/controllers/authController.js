@@ -571,7 +571,9 @@ const forgotPassword = async (req, res, next) => {
   try {
     const { email } = req.body;
 
-    const user = await User.findOne({ email });
+    // ✅ Phải select các field select: false để có thể update
+    const user = await User.findOne({ email })
+      .select('+resetPasswordCode +resetPasswordCodeExpire');
 
     if (!user) {
       // Không tiết lộ email có tồn tại hay không (bảo mật)
@@ -585,6 +587,10 @@ const forgotPassword = async (req, res, next) => {
     const resetCode = user.generateResetPasswordCode();
     
     console.log('📧 [ForgotPassword] Generated code (before save):', resetCode);
+    console.log('📧 [ForgotPassword] Current fields before save:', {
+      resetPasswordCode: user.resetPasswordCode,
+      resetPasswordCodeExpire: user.resetPasswordCodeExpire
+    });
     
     // Mark fields as modified (vì có select: false)
     user.markModified('resetPasswordCode');
@@ -594,6 +600,11 @@ const forgotPassword = async (req, res, next) => {
     try {
       await user.save({ validateBeforeSave: false });
       console.log('✅ [ForgotPassword] User saved successfully with reset code');
+      console.log('📧 [ForgotPassword] User object after save:', {
+        resetPasswordCode: user.resetPasswordCode,
+        resetPasswordCodeExpire: user.resetPasswordCodeExpire,
+        modified: user.modifiedPaths()
+      });
     } catch (saveError) {
       console.error('❌ [ForgotPassword] Error saving user:', saveError);
       throw saveError;
