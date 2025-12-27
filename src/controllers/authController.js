@@ -505,7 +505,9 @@ const resendVerification = async (req, res, next) => {
     }
 
     // Tạo code mới (sẽ OVERWRITE code cũ)
-    const verificationCode = user.generateVerificationCode();
+    user.generateVerificationCode();
+    
+    console.log('📧 [Resend] Generated code (before save):', user.verificationCode);
     
     // Mark fields as modified (vì có select: false)
     user.markModified('verificationCode');
@@ -514,25 +516,27 @@ const resendVerification = async (req, res, next) => {
     // Force save với validation disabled
     try {
       await user.save({ validateBeforeSave: false });
-      console.log('✅ User saved successfully with new code');
+      console.log('✅ [Resend] User saved successfully with new code');
     } catch (saveError) {
-      console.error('❌ Error saving user:', saveError);
+      console.error('❌ [Resend] Error saving user:', saveError);
       throw saveError;
     }
 
-    // Verify code was actually saved to DB
+    // ✅ Fetch lại từ DB để đảm bảo code chính xác
     const verifiedUser = await User.findById(user._id).select('+verificationCode +verificationCodeExpire');
-    console.log('📧 New verification code generated:', {
+    const verificationCode = verifiedUser.verificationCode;
+    
+    console.log('📧 [Resend] Code from DB after save:', verificationCode);
+    console.log('📧 [Resend] Code match check:', {
       email: user.email,
-      generatedCode: verificationCode,
-      storedCodeInDB: verifiedUser.verificationCode, // Should match generatedCode
-      expireTime: new Date(verifiedUser.verificationCodeExpire),
-      match: verificationCode === verifiedUser.verificationCode
+      storedCodeInDB: verificationCode,
+      expireTime: new Date(verifiedUser.verificationCodeExpire)
     });
 
     // Gửi email
     try {
       await sendVerificationCode(user.email, user.name, verificationCode);
+      console.log('✅ [Resend] Email sent with code:', verificationCode);
       
       // In ra console trong dev mode để dễ debug
       if (process.env.NODE_ENV === 'development') {
@@ -540,7 +544,7 @@ const resendVerification = async (req, res, next) => {
         console.log('📧 Email:', user.email);
       }
     } catch (error) {
-      console.error('❌ Failed to send verification email:', error);
+      console.error('❌ [Resend] Failed to send verification email:', error);
       return res.status(500).json({
         success: false,
         message: 'Gửi mã xác minh thất bại'

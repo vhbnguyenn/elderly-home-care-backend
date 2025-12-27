@@ -39,6 +39,8 @@ const sendEmail = async (to, subject, htmlContent) => {
  */
 const sendVerificationCode = async (email, name, code) => {
   try {
+    console.log(`📧 [sendVerificationCode] Sending email to: ${email} with code: ${code} at ${new Date().toISOString()}`);
+    
     const htmlContent = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #333;">Welcome to Elderly Home Care, ${name}!</h2>
