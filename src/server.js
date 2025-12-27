@@ -32,6 +32,7 @@ const groqMatchingRoutes = require('./routes/groqMatchingRoutes');
 const elderlyRoutes = require('./routes/elderlyRoutes');
 const adminWithdrawalRoutes = require('./routes/adminWithdrawalRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
+const addressRoutes = require('./routes/addressRoutes');
 const { startWalletCronJob } = require('./utils/walletCron');
 const { initializeFirebase } = require('./utils/fcmHelper');
 
@@ -89,6 +90,7 @@ app.use('/api/caregiver-skills', caregiverSkillRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/groq-matching', groqMatchingRoutes);
 app.use('/api/elderly', elderlyRoutes);
+app.use('/api', addressRoutes);
 app.use('/api/admin-withdrawal', adminWithdrawalRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
