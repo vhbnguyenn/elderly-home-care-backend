@@ -75,12 +75,23 @@ const userSchema = new mongoose.Schema(
 
 // Mã hóa password trước khi save (data encryption)
 userSchema.pre('save', async function(next) {
+  console.log('🔒 [Pre-save hook] Called for user:', this.email);
+  console.log('🔒 [Pre-save hook] isModified("password"):', this.isModified('password'));
+  console.log('🔒 [Pre-save hook] Modified paths:', this.modifiedPaths());
+  
   if (!this.isModified('password')) {
+    console.log('🔒 [Pre-save hook] Password not modified, skipping hash');
     return next(); // ✅ Phải return để dừng execution
   }
   
+  console.log('🔒 [Pre-save hook] Password IS modified, hashing...');
+  console.log('🔒 [Pre-save hook] Password before hash (first 20 chars):', this.password?.substring(0, 20));
+  
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
+  
+  console.log('🔒 [Pre-save hook] Password after hash (first 20 chars):', this.password?.substring(0, 20));
+  next();
 });
 
 // So sánh password

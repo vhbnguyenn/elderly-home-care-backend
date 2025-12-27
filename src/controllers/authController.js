@@ -25,6 +25,8 @@ const register = async (req, res, next) => {
 
     // Tạo user mới (password sẽ tự động được mã hóa nhờ pre-save hook)
     // Name là optional, nếu không có sẽ dùng email prefix hoặc để trống
+    console.log('🔐 [Register] Creating user with password (first 10 chars):', password?.substring(0, 10));
+    
     const user = await User.create({
       name: name || '',
       email: normalizedEmail,
@@ -32,13 +34,18 @@ const register = async (req, res, next) => {
       role,
       phone
     });
+    
+    console.log('🔐 [Register] User created, password in memory (first 20 chars):', user.password?.substring(0, 20));
 
     // Tạo mã verification code (6 số)
     user.generateVerificationCode();
     console.log('📧 [Register] Generated code (before save):', user.verificationCode);
     console.log('📧 [Register] User email:', user.email);
+    console.log('🔐 [Register] About to save again, password in memory (first 20 chars):', user.password?.substring(0, 20));
     
     await user.save();
+    
+    console.log('🔐 [Register] After second save, password in memory (first 20 chars):', user.password?.substring(0, 20));
     
     // ✅ Fetch lại user để đảm bảo lấy đúng code từ DB
     const savedUser = await User.findById(user._id).select('+verificationCode');
