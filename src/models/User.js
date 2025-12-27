@@ -121,9 +121,9 @@ userSchema.methods.generateVerificationCode = function() {
   // Tạo mã 6 số ngẫu nhiên
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   
-  // Lưu mã và thời gian hết hạn (10 phút)
+  // Lưu mã và thời gian hết hạn (30 phút - tăng từ 10 phút để dễ test)
   this.verificationCode = code;
-  this.verificationCodeExpire = Date.now() + 10 * 60 * 1000; // 10 phút
+  this.verificationCodeExpire = Date.now() + 30 * 60 * 1000; // 30 phút
   
   return code;
 };
