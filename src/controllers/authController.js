@@ -81,6 +81,8 @@ const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
+    console.log('🔐 Login attempt:', { email });
+
     // Trim và lowercase email
     const normalizedEmail = email.trim().toLowerCase();
 
@@ -88,14 +90,23 @@ const login = async (req, res, next) => {
     const user = await User.findOne({ email: normalizedEmail }).select('+password');
 
     if (!user) {
+      console.log('❌ User not found:', normalizedEmail);
       return res.status(401).json({
         success: false,
         message: 'Email hoặc mật khẩu không đúng'
       });
     }
 
+    console.log('✅ User found:', {
+      email: user.email,
+      isActive: user.isActive,
+      isEmailVerified: user.isEmailVerified,
+      hasPassword: !!user.password
+    });
+
     // Kiểm tra tài khoản có active không
     if (!user.isActive) {
+      console.log('❌ Account inactive');
       return res.status(403).json({
         success: false,
         message: 'Tài khoản của bạn đã bị vô hiệu hóa'
@@ -104,6 +115,7 @@ const login = async (req, res, next) => {
 
     // Kiểm tra email đã verify chưa
     if (!user.isEmailVerified) {
+      console.log('❌ Email not verified');
       return res.status(403).json({
         success: false,
         message: 'Vui lòng xác minh email trước khi đăng nhập'
@@ -111,14 +123,19 @@ const login = async (req, res, next) => {
     }
 
     // So sánh password
+    console.log('🔍 Comparing password...');
     const isPasswordMatch = await user.comparePassword(password);
+    console.log('🔍 Password match result:', isPasswordMatch);
 
     if (!isPasswordMatch) {
+      console.log('❌ Password mismatch');
       return res.status(401).json({
         success: false,
         message: 'Email hoặc mật khẩu không đúng'
       });
     }
+
+    console.log('✅ Login successful');
 
     // Tạo access token và refresh token
     const accessToken = user.generateToken();
@@ -149,6 +166,7 @@ const login = async (req, res, next) => {
     });
 
   } catch (error) {
+    console.error('❌ Login error:', error);
     next(error);
   }
 };
