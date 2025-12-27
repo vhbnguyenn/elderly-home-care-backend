@@ -24,8 +24,9 @@ const register = async (req, res, next) => {
     }
 
     // Tạo user mới (password sẽ tự động được mã hóa nhờ pre-save hook)
+    // Name là optional, nếu không có sẽ dùng email prefix hoặc để trống
     const user = await User.create({
-      name,
+      name: name || '',
       email: normalizedEmail,
       password,
       role,
@@ -37,8 +38,10 @@ const register = async (req, res, next) => {
     await user.save();
 
     // Gửi email verification code
+    // Dùng email làm tên tạm nếu chưa có name
+    const displayName = user.name || user.email.split('@')[0];
     try {
-      await sendVerificationCode(user.email, user.name, verificationCode);
+      await sendVerificationCode(user.email, displayName, verificationCode);
     } catch (error) {
       console.error('Failed to send verification code:', error);
     }

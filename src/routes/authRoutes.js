@@ -11,7 +11,6 @@ const { ROLES } = require('../constants');
  *     RegisterInput:
  *       type: object
  *       required:
- *         - name
  *         - email
  *         - password
  *         - confirmPassword
@@ -19,6 +18,7 @@ const { ROLES } = require('../constants');
  *       properties:
  *         name:
  *           type: string
+ *           description: Optional - Có thể cập nhật trong onboarding
  *           example: John Doe
  *         email:
  *           type: string
