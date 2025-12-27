@@ -83,17 +83,18 @@ async function parseAddress(text) {
  * Get address suggestions based on partial input
  * @param {string} text - Partial address text
  * @param {number} maxSuggestions - Maximum number of suggestions
+ * @param {object} userLocation - User's current location {latitude, longitude}
  * @returns {array} Array of address suggestions
  */
-async function getAddressSuggestions(text, maxSuggestions = 5) {
+async function getAddressSuggestions(text, maxSuggestions = 5, userLocation = null) {
   try {
     // Validate API key
     if (!process.env.GROQ_API_KEY) {
       throw new Error('GROQ_API_KEY not found in environment variables');
     }
 
-    // Build prompt for suggestions
-    const prompt = buildAddressSuggestionsPrompt(text, maxSuggestions);
+    // Build prompt for suggestions with location context
+    const prompt = buildAddressSuggestionsPrompt(text, maxSuggestions, userLocation);
 
     // Call Groq API
     const response = await axios.post(
@@ -103,7 +104,9 @@ async function getAddressSuggestions(text, maxSuggestions = 5) {
         messages: [
           {
             role: 'system',
-            content: 'You are an expert AI system for Vietnamese address autocomplete. Provide helpful, accurate address suggestions based on partial input. Focus on common Vietnamese locations and addresses.'
+            content: userLocation
+              ? 'You are an expert AI system for Vietnamese address autocomplete with location awareness. Prioritize addresses near the user\'s current location when providing suggestions. Focus on common Vietnamese locations and addresses.'
+              : 'You are an expert AI system for Vietnamese address autocomplete. Provide helpful, accurate address suggestions based on partial input. Focus on common Vietnamese locations and addresses.'
           },
           {
             role: 'user',
@@ -129,8 +132,8 @@ async function getAddressSuggestions(text, maxSuggestions = 5) {
 
     const suggestionsResult = JSON.parse(aiResponse);
 
-    // Validate and normalize suggestions
-    return normalizeAddressSuggestions(suggestionsResult, text);
+    // Validate and normalize suggestions with location context
+    return normalizeAddressSuggestions(suggestionsResult, text, userLocation);
 
   } catch (error) {
     console.error('Address suggestions API Error:', error.message);
@@ -217,7 +220,14 @@ Return response in this EXACT JSON format:
 /**
  * Build prompt for address suggestions
  */
-function buildAddressSuggestionsPrompt(text, maxSuggestions) {
+function buildAddressSuggestionsPrompt(text, maxSuggestions, userLocation = null) {
+  const locationContext = userLocation
+    ? `- User's current location: ${userLocation.latitude}, ${userLocation.longitude}
+- PRIORITIZE addresses near the user's current location
+- Suggest local addresses within 10-20km radius when possible
+- Include distance estimates in your reasoning`
+    : '';
+
   return `
 GENERATE VIETNAMESE ADDRESS SUGGESTIONS for partial input:
 "${text}"
@@ -226,7 +236,7 @@ CONTEXT:
 - User is typing an address in Vietnam
 - Provide realistic, commonly used addresses
 - Focus on major cities: Hà Nội, TP.HCM, Đà Nẵng, Hải Phòng, Cần Thơ
-- Include both urban (phường/quận) and rural (xã/huyện) addresses
+- Include both urban (phường/quận) and rural (xã/huyện) addresses${locationContext}
 
 SUGGESTION RULES:
 1. Complete the partial address with logical extensions
@@ -310,23 +320,120 @@ function normalizeParsedAddress(result, originalText) {
 /**
  * Normalize address suggestions response
  */
-function normalizeAddressSuggestions(result, query) {
+/**
+ * Calculate distance between two coordinates using Haversine formula
+ * @param {number} lat1 - Latitude 1
+ * @param {number} lon1 - Longitude 1
+ * @param {number} lat2 - Latitude 2
+ * @param {number} lon2 - Longitude 2
+ * @returns {number} Distance in kilometers
+ */
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Earth's radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+/**
+ * Get estimated coordinates for Vietnamese cities (fallback for distance calculation)
+ * @param {string} city - City name
+ * @returns {object} {latitude, longitude} or null
+ */
+function getCityCoordinates(city) {
+  const cityCoords = {
+    'Thành phố Hồ Chí Minh': { latitude: 10.7769, longitude: 106.7009 },
+    'TP.HCM': { latitude: 10.7769, longitude: 106.7009 },
+    'Hồ Chí Minh': { latitude: 10.7769, longitude: 106.7009 },
+    'Hà Nội': { latitude: 21.0285, longitude: 105.8542 },
+    'Đà Nẵng': { latitude: 16.0544, longitude: 108.2022 },
+    'Hải Phòng': { latitude: 20.8449, longitude: 106.6881 },
+    'Cần Thơ': { latitude: 10.0458, longitude: 105.7469 },
+    'Biên Hòa': { latitude: 10.9447, longitude: 106.8243 },
+    'Nha Trang': { latitude: 12.2388, longitude: 109.1967 },
+    'Vũng Tàu': { latitude: 10.3450, longitude: 107.0843 }
+  };
+
+  // Normalize city name for matching
+  const normalizedCity = city?.toLowerCase()
+    .replace('thành phố', '').trim();
+
+  for (const [key, coords] of Object.entries(cityCoords)) {
+    if (key.toLowerCase().includes(normalizedCity) || normalizedCity.includes(key.toLowerCase())) {
+      return coords;
+    }
+  }
+
+  return null;
+}
+
+function normalizeAddressSuggestions(result, query, userLocation = null) {
   const suggestions = Array.isArray(result.suggestions) ? result.suggestions : [];
 
-  // Ensure each suggestion has required fields
-  return suggestions.slice(0, 10).map(suggestion => ({
-    text: suggestion.text || '',
-    parsed: {
-      houseNumber: suggestion.parsed?.houseNumber || null,
-      street: suggestion.parsed?.street || null,
-      ward: suggestion.parsed?.ward || null,
-      district: suggestion.parsed?.district || null,
-      city: suggestion.parsed?.city || null,
-      province: suggestion.parsed?.province || null,
-      postalCode: suggestion.parsed?.postalCode || null
-    },
-    relevance: typeof suggestion.relevance === 'number' ? suggestion.relevance : 0.5
-  }));
+  // Process suggestions with distance calculation if userLocation is provided
+  let processedSuggestions = suggestions.slice(0, 10).map(suggestion => {
+    const processed = {
+      text: suggestion.text || '',
+      parsed: {
+        houseNumber: suggestion.parsed?.houseNumber || null,
+        street: suggestion.parsed?.street || null,
+        ward: suggestion.parsed?.ward || null,
+        district: suggestion.parsed?.district || null,
+        city: suggestion.parsed?.city || null,
+        province: suggestion.parsed?.province || null,
+        postalCode: suggestion.parsed?.postalCode || null
+      },
+      relevance: typeof suggestion.relevance === 'number' ? suggestion.relevance : 0.5,
+      distance: null,
+      coordinates: null
+    };
+
+    // Calculate distance if user location is provided
+    if (userLocation) {
+      const cityCoords = getCityCoordinates(processed.parsed.city);
+      if (cityCoords) {
+        processed.distance = calculateDistance(
+          userLocation.latitude,
+          userLocation.longitude,
+          cityCoords.latitude,
+          cityCoords.longitude
+        );
+        processed.coordinates = cityCoords;
+
+        // Boost relevance for closer locations
+        if (processed.distance <= 10) {
+          processed.relevance = Math.min(1.0, processed.relevance * 1.3); // 30% boost for very close
+        } else if (processed.distance <= 50) {
+          processed.relevance = Math.min(1.0, processed.relevance * 1.1); // 10% boost for nearby
+        } else if (processed.distance > 500) {
+          processed.relevance *= 0.8; // Reduce relevance for far locations
+        }
+      }
+    }
+
+    return processed;
+  });
+
+  // Sort by relevance (and distance if available)
+  processedSuggestions.sort((a, b) => {
+    // Primary sort: by relevance
+    if (Math.abs(a.relevance - b.relevance) > 0.01) {
+      return b.relevance - a.relevance;
+    }
+    // Secondary sort: by distance (closer first)
+    if (a.distance !== null && b.distance !== null) {
+      return a.distance - b.distance;
+    }
+    // Tertiary sort: keep original order if no distance data
+    return 0;
+  });
+
+  return processedSuggestions;
 }
 
 module.exports = {

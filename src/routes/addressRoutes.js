@@ -117,7 +117,7 @@ router.post(
  * /api/parse-address/suggestions:
  *   post:
  *     summary: Get address suggestions based on partial input
- *     description: Provide autocomplete suggestions for Vietnamese addresses based on partial text input
+ *     description: Provide autocomplete suggestions for Vietnamese addresses based on partial text input. Supports location-based suggestions prioritizing nearby addresses when userLocation is provided.
  *     tags: [Address Parsing]
  *     requestBody:
  *       required: true
@@ -140,6 +140,22 @@ router.post(
  *                 minimum: 1
  *                 maximum: 10
  *                 example: 5
+ *               userLocation:
+ *                 type: object
+ *                 description: User's current location for location-based suggestions
+ *                 properties:
+ *                   latitude:
+ *                     type: number
+ *                     description: Latitude coordinate
+ *                     minimum: -90
+ *                     maximum: 90
+ *                     example: 10.7769
+ *                   longitude:
+ *                     type: number
+ *                     description: Longitude coordinate
+ *                     minimum: -180
+ *                     maximum: 180
+ *                     example: 106.7009
  *     responses:
  *       200:
  *         description: Address suggestions generated successfully
@@ -188,6 +204,22 @@ router.post(
  *                             minimum: 0
  *                             maximum: 1
  *                             example: 0.95
+ *                           distance:
+ *                             type: number
+ *                             nullable: true
+ *                             description: Distance in kilometers from user's location
+ *                             example: 2.5
+ *                           coordinates:
+ *                             type: object
+ *                             nullable: true
+ *                             description: Estimated coordinates of the address
+ *                             properties:
+ *                               latitude:
+ *                                 type: number
+ *                                 example: 10.7769
+ *                               longitude:
+ *                                 type: number
+ *                                 example: 106.7009
  *                     timestamp:
  *                       type: string
  *                       format: date-time
