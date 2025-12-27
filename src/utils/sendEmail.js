@@ -1,22 +1,30 @@
 const nodemailer = require('nodemailer');
 
 /**
- * Create nodemailer transporter with Gmail SMTP
+ * Create nodemailer transporter with Brevo SMTP
  */
 const createTransporter = () => {
+  const port = parseInt(process.env.EMAIL_PORT);
+  
   return nodemailer.createTransport({
     host: process.env.EMAIL_HOST,
-    port: process.env.EMAIL_PORT,
-    secure: false, // true for 465, false for other ports
+    port: port,
+    secure: port === 465, // true for 465, false for 587
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASSWORD,
     },
+    tls: {
+      rejectUnauthorized: false
+    },
+    connectionTimeout: 10000, // 10 seconds
+    greetingTimeout: 10000,
+    socketTimeout: 10000
   });
 };
 
 /**
- * Send email using Gmail SMTP
+ * Send email using Brevo SMTP
  */
 const sendEmailViaSMTP = async (to, subject, htmlContent) => {
   try {
@@ -33,18 +41,16 @@ const sendEmailViaSMTP = async (to, subject, htmlContent) => {
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log('✅ Email sent via Gmail SMTP:', info.messageId);
+    console.log('✅ Email sent via Brevo SMTP:', info.messageId);
     return true;
   } catch (error) {
-    console.error('❌ Gmail SMTP error:', error.message);
+    console.error('❌ Brevo SMTP error:', error.message);
+    console.error('Error details:', error);
     
-    // Trong development mode, cho phép tiếp tục dù email fail
-    if (process.env.NODE_ENV === 'development') {
-      console.log('⚠️ [DEV MODE] Email sending failed but continuing...');
-      return true;
-    }
-    
-    throw new Error(`Gmail SMTP failed: ${error.message}`);
+    // Không throw error để không làm crash app
+    // Chỉ log lỗi và tiếp tục
+    console.log('⚠️ Email sending failed but continuing...');
+    return false;
   }
 };
 
