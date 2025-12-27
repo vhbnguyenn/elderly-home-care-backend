@@ -260,11 +260,13 @@ const refreshToken = async (req, res, next) => {
     // Tạo access token mới
     const newAccessToken = user.generateToken();
 
+    // CRITICAL: Return both accessToken and refreshToken
     res.status(200).json({
       success: true,
       message: 'Làm mới token thành công',
       data: {
-        accessToken: newAccessToken
+        accessToken: newAccessToken,
+        refreshToken: refreshToken // Return the same refresh token
       }
     });
 
