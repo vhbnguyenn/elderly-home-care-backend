@@ -346,12 +346,28 @@ const verifyCode = async (req, res, next) => {
       match: storedCode === receivedCode
     });
 
-    // Check expiry
-    if (!userByEmail.verificationCodeExpire || userByEmail.verificationCodeExpire < Date.now()) {
+    // Check expiry with detailed logging
+    const now = Date.now();
+    const expireTime = userByEmail.verificationCodeExpire;
+    const timeRemaining = expireTime ? (expireTime - now) / 1000 / 60 : 0; // minutes
+
+    console.log('⏰ Expiry check:', {
+      expireTime: new Date(expireTime),
+      now: new Date(now),
+      timeRemainingMinutes: timeRemaining.toFixed(2),
+      isExpired: !expireTime || expireTime < now
+    });
+
+    if (!expireTime || expireTime < now) {
       console.log('❌ Code expired');
       return res.status(400).json({
         success: false,
-        message: 'Mã xác minh đã hết hạn. Vui lòng yêu cầu mã mới.'
+        message: 'Mã xác minh đã hết hạn. Vui lòng yêu cầu mã mới.',
+        debug: process.env.NODE_ENV === 'development' ? {
+          expireTime: new Date(expireTime),
+          now: new Date(now),
+          timeRemainingMinutes: timeRemaining.toFixed(2)
+        } : undefined
       });
     }
 
