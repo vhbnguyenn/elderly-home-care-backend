@@ -583,13 +583,41 @@ const forgotPassword = async (req, res, next) => {
 
     // Tạo reset password code
     const resetCode = user.generateResetPasswordCode();
-    await user.save();
-
-    // Gửi email
+    
+    console.log('📧 [ForgotPassword] Generated code (before save):', resetCode);
+    
+    // Mark fields as modified (vì có select: false)
+    user.markModified('resetPasswordCode');
+    user.markModified('resetPasswordCodeExpire');
+    
+    // Force save với validation disabled
     try {
-      await sendResetPasswordCode(user.email, user.name, resetCode);
+      await user.save({ validateBeforeSave: false });
+      console.log('✅ [ForgotPassword] User saved successfully with reset code');
+    } catch (saveError) {
+      console.error('❌ [ForgotPassword] Error saving user:', saveError);
+      throw saveError;
+    }
+
+    // ✅ Fetch lại từ DB để đảm bảo code chính xác
+    const verifiedUser = await User.findById(user._id).select('+resetPasswordCode +resetPasswordCodeExpire');
+    const verifiedResetCode = verifiedUser.resetPasswordCode;
+    
+    console.log('📧 [ForgotPassword] Code from DB after save:', verifiedResetCode);
+    console.log('📧 [ForgotPassword] Code match check:', {
+      email: user.email,
+      generatedCode: resetCode,
+      storedCodeInDB: verifiedResetCode,
+      match: resetCode === verifiedResetCode,
+      expireTime: new Date(verifiedUser.resetPasswordCodeExpire)
+    });
+
+    // Gửi email với code từ DB (an toàn hơn)
+    try {
+      await sendResetPasswordCode(user.email, user.name, verifiedResetCode);
+      console.log('✅ [ForgotPassword] Email sent with code:', verifiedResetCode);
     } catch (error) {
-      console.error('Failed to send reset code:', error);
+      console.error('❌ [ForgotPassword] Failed to send reset code:', error);
       return res.status(500).json({
         success: false,
         message: 'Gửi mã đặt lại mật khẩu thất bại'
