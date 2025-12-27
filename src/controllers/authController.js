@@ -35,15 +35,21 @@ const register = async (req, res, next) => {
 
     // Tạo mã verification code (6 số)
     const verificationCode = user.generateVerificationCode();
+    console.log('📧 [Register] Generated code:', verificationCode);
+    console.log('📧 [Register] User email:', user.email);
+    
     await user.save();
+    
+    console.log('📧 [Register] Code after save:', user.verificationCode);
 
     // Gửi email verification code
     // Dùng email làm tên tạm nếu chưa có name
     const displayName = user.name || user.email.split('@')[0];
     try {
       await sendVerificationCode(user.email, displayName, verificationCode);
+      console.log('✅ [Register] Email sent with code:', verificationCode);
     } catch (error) {
-      console.error('Failed to send verification code:', error);
+      console.error('❌ [Register] Failed to send verification code:', error);
     }
 
     // Không trả về password
